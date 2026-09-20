@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 语言管理（中文 / 英文切换、跟随系统语言）
+ * UI language management (English / Simplified Chinese, follow-system option)
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -17,27 +17,32 @@
 class QTranslator;
 
 /**
- * 界面语言管理
+ * UI language management.
  *
- * - 支持 简体中文 / English 两种界面语言
- * - 支持 "跟随系统"：识别系统语言，无法识别（非中文）时回退到英文
- * - 选择结果写入 QSettings，下次启动自动沿用
- * - 切换语言后向所有顶层窗口投递 LanguageChange 事件，界面即时刷新
- *   （无需重启程序）
+ * - Two UI languages are available: English and Simplified Chinese.
+ * - "Follow System" detects the system language and falls back to English
+ *   for anything that is not Chinese.
+ * - The selection is stored in QSettings and restored on the next start.
+ * - Switching the language posts a LanguageChange event to every top level
+ *   widget, so the UI refreshes immediately without restarting.
+ *
+ * English is the source language of every string in the source code; the
+ * Chinese text lives in translations/app_zh_CN.ts. Switching to English
+ * therefore only requires removing the installed translator.
  */
 class LanguageManager : public QObject
 {
     Q_OBJECT
 
 public:
-    /** 语言选择项（用户的设置项） */
+    /** Language options shown in the menu */
     enum class Preference {
-        Auto,               /**< 跟随系统语言 */
-        English,            /**< 英文 */
-        ChineseSimplified   /**< 简体中文 */
+        Auto,               /**< Follow the system language */
+        English,            /**< English */
+        ChineseSimplified   /**< Simplified Chinese */
     };
 
-    /** 实际生效的语言代码 */
+    /** Effective language */
     enum class Language {
         English,            /**< en */
         ChineseSimplified   /**< zh_CN */
@@ -45,32 +50,32 @@ public:
 
     static LanguageManager *instance();
 
-    /** 当前用户设置（可能是 Auto） */
+    /** Current preference (may be Auto) */
     Preference preference() const { return preference_; }
 
-    /** 当前生效的语言（Auto 已解析为具体语言） */
+    /** Language currently in effect (Auto already resolved) */
     Language resolvedLanguage() const;
 
-    /** 生效语言的 Qt 名称（en / zh_CN） */
+    /** Qt name of the effective language (en / zh_CN) */
     QString languageCode() const;
 
-    /** 生效语言的本地化名称（English / 简体中文），用于菜单显示 */
+    /** Localised name of the effective language, used in the menu */
     QString languageDisplayName() const;
 
-    /** 可选的设置项（顺序与 Preference 枚举一致） */
+    /** Available options, in the same order as the Preference enum */
     static QStringList preferenceNames();
 
-    /** 设置并应用语言 */
+    /** Store the preference and apply it */
     void setPreference(Preference pref);
 
-    /** 根据当前设置重新装载翻译，并通知界面刷新 */
+    /** Reload the translation for the current setting and refresh the UI */
     void apply();
 
-    /** 载入指定翻译文件；失败返回 false */
+    /** Load the given translation; false on failure */
     bool loadLanguage(Language lang);
 
 Q_SIGNALS:
-    /** 语言已切换（界面刷新前发出） */
+    /** Emitted when the language changed, before the UI is refreshed */
     void languageChanged(Language language);
 
 private:
@@ -79,9 +84,10 @@ private:
 
     void loadFromSettings();
     void saveToSettings();
+    void uninstallTranslator();
 
     Preference preference_;
-    QTranslator *translator_;      /**< 应用自身翻译 */
+    QTranslator *translator_;      /**< Application translation */
     Language current_;
 };
 

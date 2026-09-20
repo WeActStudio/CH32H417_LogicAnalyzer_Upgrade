@@ -10,7 +10,8 @@ CONFIG -= app_bundle debug_and_release debug_and_release_target
 
 TARGET = test_firmware
 
-# 与主程序共用静态 Qt 的链接修正（Qt6 的 harfbuzz / freetype / iconv 链接顺序）
+# Shares the static Qt link fixes with the main program (Qt6 harfbuzz /
+# freetype / iconv link order)
 include($$PWD/../qt6_static_link.pri)
 
 INCLUDEPATH += $$PWD/../src

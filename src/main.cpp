@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 程序入口
+ * Program entry point
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -14,9 +14,11 @@
 #include <QLocale>
 #include <QStyleHints>
 #include <QTimer>
+#include <QWidget>
 #include <QDebug>
 
 #include "mainwindow.h"
+#include "cli.h"
 #include "languagemanager.h"
 #include "thememanager.h"
 
@@ -26,22 +28,38 @@ int main(int argc, char *argv[])
 
     QApplication::setApplicationName("CH32H417 Logic Analyzer Upgrade");
     QApplication::setApplicationVersion("1.0.0");
-    /* 与 languagemanager / thememanager / mainwindow 里的 kSettingsOrg 保持一致，
-     * 注册表路径统一为 WeActStudio\CH32H417 Logic Analyzer Upgrade */
+    /* Company behind the settings path and the About dialog */
     QApplication::setOrganizationName("WeActStudio");
 
-    /* 应用程序图标：logo.ico 已嵌入 exe 资源，这里再显式设置，
-     * 保证标题栏 / 任务栏 / 关于对话框都使用同一 logo。 */
+    /*
+     * Headless mode: --firmware / --list / --help / --version run the upgrade
+     * without a window and return a process exit code. The same mode is used
+     * when the program is started from a command prompt, where a window is not
+     * what the user expects. No translator is installed on this path.
+     */
+    QStringList args;
+    for (int i = 1; i < argc; ++i)
+        args << QString::fromLocal8Bit(argv[i]);
+
+    if (cliRequested(args))
+        return cliRun(args);
+
+    /* Application icon: logo.ico is embedded in the executable, setting it here
+     * as well makes sure the title bar, the task bar and the About dialog all
+     * use the same logo. */
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/logo")));
 
     /*
-     * 界面语言：默认跟随系统，系统语言不支持时回退英文。
-     * 用户可在菜单 "语言" 中切换，选择会被记住，切换后立即生效。
-     * 必须在创建窗口之前装载翻译。
+     * UI language: English is the source language of every string, the Chinese
+     * text comes from the compiled app_zh_CN.qm. The UI follows the system
+     * language by default and falls back to English for anything else.
+     * The user can switch languages in the "Language" menu; the choice is
+     * remembered and takes effect immediately.
+     * The translation must be installed before any window is created.
      */
     LanguageManager *langMgr = LanguageManager::instance();
 
-    /* 命令行可覆盖：--lang=en | --lang=zh_CN | --lang=auto */
+    /* Command line override: --lang=en | --lang=zh_CN | --lang=auto */
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (!arg.startsWith(QLatin1String("--lang")))
@@ -64,17 +82,19 @@ int main(int argc, char *argv[])
     qDebug() << "UI language:" << langMgr->languageCode()
              << "| system:" << QLocale::system().name();
 
-    /* 注意：不要设置 QApplication::setApplicationDisplayName ——
-     * Windows 上标题栏会显示 "窗口标题 - 应用显示名" 的拼接，
-     * 且显示名不随语言切换更新，导致英文模式下残留中文。
-     * 窗口标题由 MainWindow::retranslateUi() 全权控制。 */
+    /* Do NOT call QApplication::setApplicationDisplayName: on Windows the title
+     * bar would show "window title - application display name" and the display
+     * name is not updated when the language changes, which would leave Chinese
+     * text behind in English mode. The window title is owned entirely by
+     * MainWindow::retranslateUi(). */
     /*
-     * 界面主题：默认跟随系统（浅色 / 深色），
-     * Qt 6.5+ 在系统主题变化时会自动切换，无需重启。
+     * UI theme: follows the system light/dark setting by default; with Qt 6.5+
+     * the theme switches live when the system theme changes, no restart needed.
      */
     ThemeManager *themeMgr = ThemeManager::instance();
 
-    /* 命令行可覆盖：--theme=light | --theme=dark | --theme=auto（便于验证与截图） */
+    /* Command line override: --theme=light | --theme=dark | --theme=auto
+     * (handy for verification runs and screenshots) */
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (!arg.startsWith(QLatin1String("--theme")))
@@ -97,7 +117,7 @@ int main(int argc, char *argv[])
     qDebug() << "dark mode:" << themeMgr->isDark();
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    /* 系统深浅色切换时实时跟随 */
+    /* Follow the system light/dark switch live */
     QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                      themeMgr, [themeMgr](Qt::ColorScheme) {
                          themeMgr->apply();
@@ -108,20 +128,34 @@ int main(int argc, char *argv[])
     MainWindow window;
     window.show();
 
-    /* 自动化验证用：--screenshot=<文件> 在窗口显示后抓取界面并存盘 */
+    /* Automation helper: --screenshot=<file> grabs the window once it is shown.
+     * The active window is used, so dialogs opened by --about are captured too. */
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (!arg.startsWith(QLatin1String("--screenshot=")))
             continue;
         const QString path = arg.section(QLatin1Char('='), 1);
         QTimer::singleShot(1500, &window, [&window, path]() {
-            window.grab().save(path);
+            QWidget *target = QApplication::activeWindow();
+            if (!target)
+                target = &window;
+            target->grab().save(path);
             qDebug() << "screenshot saved:" << path;
         });
         break;
     }
 
-    /* 自动化验证用：--autoswitch=en|zh_CN 窗口显示后自动切换语言（模拟菜单切换） */
+    /* Automation helper: --about opens the About dialog (with --screenshot it
+     * produces a picture of the About dialog) */
+    for (int i = 1; i < argc; ++i) {
+        if (QString::fromLocal8Bit(argv[i]) != QLatin1String("--about"))
+            continue;
+        QTimer::singleShot(800, &window, [&window]() { window.showAbout(); });
+        break;
+    }
+
+    /* Automation helper: --autoswitch=en|zh_CN switches the language after the
+     * window is shown (simulates the menu action) */
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (!arg.startsWith(QLatin1String("--autoswitch=")))

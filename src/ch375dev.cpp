@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * CH375 设备访问层实现
+ * CH375 device access layer implementation
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -15,12 +15,12 @@
 
 #include <cstring>
 
-/* 应用层命令（与固件 ch32h417_logic.h 保持一致） */
-#define CMD_GET_VERSION     0xAC    /* 读取版本 */
-#define CMD_SET_IAP         0xAE    /* 切换到 IAP 下载模式 */
-#define CMD_RETURN_PARA     0x10    /* 命令响应标志 */
+/* Application level commands (kept in sync with firmware ch32h417_logic.h) */
+#define CMD_GET_VERSION     0xAC    /* Read version */
+#define CMD_SET_IAP         0xAE    /* Switch to IAP download mode */
+#define CMD_RETURN_PARA     0x10    /* Command response flag */
 
-/* 命令通道包长度 */
+/* Command channel packet length */
 #define CMD_PACKET_LEN      64
 
 namespace {
@@ -37,10 +37,10 @@ bool hid_ready()
 }
 
 /*
- * 从 CH375 返回的设备路径里解析 USB 序列号（小写）。
- * 设备路径形如：
+ * Extract the USB serial number (lower case) from the device path returned by
+ * CH375. The path looks like:
  *   \\?\usb#vid_1a86&pid_5537#b5e339e33906e19c7f6416064c#{5e7f6bdf-...}
- * 第 2 个 '#' 与第 3 个 '#' 之间即实例序列号。
+ * The instance serial number sits between the 2nd and the 3rd '#'.
  */
 QString extractUsbSerial(const char *devicePath)
 {
@@ -66,13 +66,25 @@ QString extractUsbSerial(const char *devicePath)
 
 } // namespace
 
+bool ch375dev_is_iap_id(quint16 vid, quint16 pid)
+{
+    return vid == CH32H417_IAP_VID && pid == CH32H417_IAP_PID;
+}
+
+bool ch375dev_is_app_id(quint16 vid, quint16 pid)
+{
+    return vid == CH32H417_APP_VID && pid == CH32H417_APP_PID;
+}
+
 bool ch375dev_init(QString &errorMessage)
 {
     if (ch375_init() != 0) {
         errorMessage = QCoreApplication::translate(
                            "Ch375Dev",
-                           "无法加载 CH375DLL64.DLL / CH375DLL.DLL。\n"
-                           "请确认已安装 CH375 驱动，且驱动 DLL 位于本程序目录或系统可搜索路径中。");
+                           "Unable to load CH375DLL64.DLL / CH375DLL.DLL.\n"
+                           "Make sure the CH375 driver is installed and that the "
+                           "driver DLL is placed next to this program or in a "
+                           "directory on the system search path.");
         return false;
     }
     return true;
@@ -97,13 +109,19 @@ QList<Ch375DeviceInfo> ch375dev_enum_devices(quint16 matchVid, quint16 matchPid,
         const quint16 vid = static_cast<quint16>(usbId & 0xFFFF);
         const quint16 pid = static_cast<quint16>(usbId >> 16);
 
-        if ((matchVid == 0 || vid == matchVid) && (matchPid == 0 || pid == matchPid)) {
+        /* Accept the run mode ID on the CH375 channel: 1A86:5537 */
+        const bool vidOk = (matchVid == 0) || (vid == matchVid);
+        const bool pidOk = (matchPid == 0) || (pid == matchPid) || ch375dev_is_app_id(vid, pid);
+
+        if (vidOk && pidOk) {
             Ch375DeviceInfo info;
             info.index = static_cast<int>(i);
             info.vid = vid;
             info.pid = pid;
+            info.isIap = ch375dev_is_iap_id(vid, pid);
 
-            /* 设备路径里带 USB 序列号，用于识别具体产品（b5 开头 = Logic Analyzer V2） */
+            /* The device path carries the USB serial number, used to identify the
+             * exact product (a "b5" prefix means Logic Analyzer V2). */
             const char *devicePath = ch375_get_device_name(i);
             if (devicePath)
                 info.name = QString::fromLocal8Bit(devicePath);
@@ -119,10 +137,11 @@ QList<Ch375DeviceInfo> ch375dev_enum_devices(quint16 matchVid, quint16 matchPid,
 }
 
 /*
- * 枚举处于 IAP 升级模式的 HID 设备。
+ * Enumerate the HID devices that are already in IAP upgrade mode.
  *
- * 设备进入 IAP 后会复位成 HID 设备（1A86:FE17），此时 CH375 通道上已经看不到它，
- * 只有 hidapi 能枚举到，因此单独列出来，保证设备列表里始终能看到设备。
+ * After entering IAP the device resets into a HID device (1A86:FE17). It is no
+ * longer visible on the CH375 channel and only hidapi can see it, so it is
+ * enumerated separately to keep the device list complete.
  */
 QList<Ch375DeviceInfo> ch375dev_enum_hid_devices(quint16 matchVid, quint16 matchPid)
 {
@@ -134,7 +153,7 @@ QList<Ch375DeviceInfo> ch375dev_enum_hid_devices(quint16 matchVid, quint16 match
     hid_device_info *devs = ::hid_enumerate(matchVid, matchPid);
     for (hid_device_info *cur = devs; cur; cur = cur->next) {
         Ch375DeviceInfo info;
-        info.index = -1;            /* HID 设备没有 CH375 索引 */
+        info.index = -1;            /* HID devices have no CH375 index */
         info.isIap = true;
         info.vid = cur->vendor_id;
         info.pid = cur->product_id;
@@ -144,8 +163,10 @@ QList<Ch375DeviceInfo> ch375dev_enum_hid_devices(quint16 matchVid, quint16 match
         if (cur->serial_number) {
             info.serial = QString::fromWCharArray(cur->serial_number).toLower();
             /*
-             * 部分固件把实例序列号放在 serial_number 里；也有固件给出的是
-             * 形如 "b5e339e33906e19c7f6416064c" 的字符串，两种都能用于识别产品。
+             * Some firmware builds expose the instance serial number directly in
+             * serial_number; others report a string such as
+             * "b5e339e33906e19c7f6416064c". Both can be used to identify the
+             * product.
              */
         }
         if (info.serial.isEmpty() && cur->path)
@@ -165,7 +186,7 @@ bool ch375dev_get_version(int index, quint8 &swVer, quint8 &hwVer,
     hwVer = 0;
 
     if (index < 0) {
-        errorMessage = QCoreApplication::translate("Ch375Dev", "设备索引无效");
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Invalid device index");
         return false;
     }
 
@@ -176,7 +197,7 @@ bool ch375dev_get_version(int index, quint8 &swVer, quint8 &hwVer,
 
     void *handle = ch375_open_device(static_cast<unsigned long>(index));
     if (handle == CH375_INVALID_HANDLE) {
-        errorMessage = QCoreApplication::translate("Ch375Dev", "无法打开 CH375 设备 (索引 %1)").arg(index);
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Cannot open CH375 device (index %1)").arg(index);
         return false;
     }
 
@@ -202,14 +223,14 @@ bool ch375dev_get_version(int index, quint8 &swVer, quint8 &hwVer,
 
     if (!ok) {
         ch375_close_device(static_cast<unsigned long>(index));
-        errorMessage = QCoreApplication::translate("Ch375Dev", "读取固件版本失败（设备无响应）");
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Failed to read firmware version (device did not respond)");
         return false;
     }
 
     ch375_close_device(static_cast<unsigned long>(index));
 
     if (resp[0] != (CMD_GET_VERSION | CMD_RETURN_PARA)) {
-        errorMessage = QCoreApplication::translate("Ch375Dev", "版本响应异常：0x%1")
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Unexpected version response: 0x%1")
                            .arg(static_cast<unsigned>(resp[0]), 2, 16, QChar('0'));
         return false;
     }
@@ -222,7 +243,7 @@ bool ch375dev_get_version(int index, quint8 &swVer, quint8 &hwVer,
 bool ch375dev_enter_iap(int index, QString &errorMessage)
 {
     if (index < 0) {
-        errorMessage = QCoreApplication::translate("Ch375Dev", "设备索引无效");
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Invalid device index");
         return false;
     }
 
@@ -233,13 +254,13 @@ bool ch375dev_enter_iap(int index, QString &errorMessage)
 
     void *handle = ch375_open_device(static_cast<unsigned long>(index));
     if (handle == CH375_INVALID_HANDLE) {
-        errorMessage = QCoreApplication::translate("Ch375Dev", "无法打开 CH375 设备 (索引 %1)").arg(index);
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Cannot open CH375 device (index %1)").arg(index);
         return false;
     }
 
     unsigned char cmd[CMD_PACKET_LEN];
     std::memset(cmd, 0, sizeof(cmd));
-    cmd[0] = CMD_SET_IAP;   /* 通知 APP 写入 IAP 标志并复位 */
+    cmd[0] = CMD_SET_IAP;   /* Tell the application to set the IAP flag and reset */
     cmd[1] = 0;
 
     ch375_set_timeout_ex(static_cast<unsigned long>(index), 1000, 1000, 1000, 1000);
@@ -251,7 +272,7 @@ bool ch375dev_enter_iap(int index, QString &errorMessage)
     ch375_close_device(static_cast<unsigned long>(index));
 
     if (!ok) {
-        errorMessage = QCoreApplication::translate("Ch375Dev", "发送进入 IAP 模式命令失败");
+        errorMessage = QCoreApplication::translate("Ch375Dev", "Failed to send the enter-IAP-mode command");
         return false;
     }
 
@@ -285,11 +306,12 @@ DeviceMode ch375dev_detect(quint16 appVid, quint16 appPid,
 
     deviceList = ch375dev_enum_devices(appVid, appPid, errorMessage);
 
-    /* IAP 模式的设备通过 HID 通道枚举，同样放进设备列表，方便用户确认设备在线 */
+    /* Devices already in IAP mode are enumerated over HID and added to the same
+     * list, so the user can always see that the device is online. */
     deviceList += ch375dev_enum_hid_devices(iapVid, iapPid);
 
     if (!deviceList.isEmpty()) {
-        /* 优先使用运行模式（CH375）的设备进行版本查询 / 切换 IAP */
+        /* Prefer an application mode (CH375) device for version query / IAP switch */
         for (const Ch375DeviceInfo &info : deviceList) {
             if (!info.isIap) {
                 appIndex = info.index;

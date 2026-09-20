@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 主题管理（浅色 / 深色，跟随系统）
+ * Theme management (light / dark, follow the system setting)
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -22,7 +22,7 @@ const char *kSettingsOrg = "WeActStudio";
 const char *kSettingsApp = "CH32H417 Logic Analyzer Upgrade";
 const char *kSettingsKey = "theme";
 
-/* 深色配色（Fusion 风格） */
+/* Dark colour scheme (Fusion style) */
 QPalette darkPalette()
 {
     QPalette p;
@@ -62,11 +62,12 @@ QPalette darkPalette()
 }
 
 /*
- * 浅色配色（Fusion 风格）
+ * Light colour scheme (Fusion style)
  *
- * 注意：这里必须显式给出每一项的取值，不能直接用 QPalette() 的默认值 ——
- * QPalette 的默认构造函数取的是“当前应用调色板”，若之前已经应用过深色板，
- * 直接 setPalette(QPalette()) 会把深色板原样再设回去，导致从深色切回浅色无效。
+ * Every entry has to be set explicitly here instead of relying on the default
+ * QPalette(): the default constructor copies the *current* application palette,
+ * so after a dark palette has been applied, setPalette(QPalette()) would simply
+ * install the dark colours again and switching back to light would do nothing.
  */
 QPalette lightPalette()
 {
@@ -130,9 +131,9 @@ bool ThemeManager::systemPrefersDark()
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
 #else
-    /* Qt 5 没有 colorScheme 接口：读取 Windows 个性化设置
+    /* Qt 5 has no colorScheme API: read the Windows personalisation setting
      * HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme
-     * 0 = 深色，1 = 浅色 */
+     * 0 = dark, 1 = light */
     QSettings reg(
         QLatin1String("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
         QSettings::NativeFormat);
@@ -162,12 +163,12 @@ QString ThemeManager::modeName(Mode mode)
 {
     switch (mode) {
     case Mode::Auto:
-        return QCoreApplication::translate("ThemeManager", "跟随系统(&S)");
+        return QCoreApplication::translate("ThemeManager", "Follow System(&S)");
     case Mode::Light:
-        return QCoreApplication::translate("ThemeManager", "浅色(&L)");
+        return QCoreApplication::translate("ThemeManager", "Light(&L)");
     case Mode::Dark:
     default:
-        return QCoreApplication::translate("ThemeManager", "深色(&D)");
+        return QCoreApplication::translate("ThemeManager", "Dark(&D)");
     }
 }
 
@@ -209,7 +210,8 @@ void ThemeManager::apply()
 {
     const bool dark = effectiveDark();
 
-    /* Fusion 风格保证自定义调色板在静态构建下也生效 */
+    /* The Fusion style guarantees that the custom palette is honoured in a
+       static build as well */
     if (QApplication::style()->objectName().compare(QLatin1String("fusion"), Qt::CaseInsensitive) != 0)
         QApplication::setStyle(QLatin1String("Fusion"));
 

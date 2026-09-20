@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 主窗口
+ * Main window
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -34,7 +34,7 @@ class QGroupBox;
 class QWidget;
 
 /**
- * 升级工具主窗口
+ * Main window of the upgrade tool.
  */
 class MainWindow : public QMainWindow
 {
@@ -51,16 +51,19 @@ protected:
     void changeEvent(QEvent *event) override;
 
 public Q_SLOTS:
-    /* CH375 DLL 内部日志（可能来自工作线程，通过队列投递到界面） */
+    /* Internal CH375 DLL log (may come from a worker thread, posted to the UI
+       through the event queue) */
     void appendCh375Log(int level, const QString &message);
+
+    /* Open the About dialog; public so that the "--about" command line helper
+       can show it for screenshots */
+    void showAbout();
 
 private Q_SLOTS:
     void onRefreshDevices();
     void onBrowseFirmware();
     void onStartUpgrade();
-    void onCancelUpgrade();
     void onClearLog();
-    void onAbout();
 
     void onFirmwarePathChanged(const QString &path);
     void onDeviceIndexChanged(int index);
@@ -71,16 +74,16 @@ private Q_SLOTS:
 
     void onAutoRefreshTimeout();
 
-    /* 语言菜单 */
-    void onLanguageActionTriggered(QAction *action);
-    void onLanguageChanged();
     void onThemeActionTriggered(QAction *action);
     void onThemeChanged();
+
+    /* Language menu */
+    void onLanguageActionTriggered(QAction *action);
+    void onLanguageChanged();
 
 private:
     void setupUi();
     void createMenus();
-    void createLanguageMenu();
     void retranslateUi();
     void loadSettings();
     void saveSettings();
@@ -92,7 +95,8 @@ private:
     void setBusy(bool busy);
     void appendLog(const QString &message, bool isError = false);
 
-    /* 日志按条目保存，切换深浅色时整体重绘，颜色始终跟随当前主题 */
+    /* Log entries are kept so that the whole log can be repainted when the
+       light/dark theme changes; the colours always follow the current theme */
     struct LogEntry
     {
         QString time;
@@ -103,7 +107,7 @@ private:
     void renderLog();
     QString logTextColor() const;
     QString logErrorColor() const;
-    QString statusColor(int kind) const;   /* 0=已连接 1=IAP 模式 2=未发现 */
+    QString statusColor(int kind) const;   /* 0=connected 1=IAP mode 2=not found */
 
     quint16 iapVid() const;
     quint16 iapPid() const;
@@ -114,37 +118,36 @@ private:
     bool ensureNotBusy();
 
 private:
-    /* 设备区 */
+    /* Device section */
     QComboBox *deviceCombo_;
     QPushButton *refreshButton_;
     QLabel *deviceStatusLabel_;
     QLabel *deviceVersionLabel_;
     QTimer *autoRefreshTimer_;
 
-    /* 固件区 */
+    /* Firmware section */
     QLineEdit *fileEdit_;
     QPushButton *browseButton_;
     QLabel *firmwareInfoLabel_;
     QLineEdit *baseAddressEdit_;
-    QLabel *baseAddressHintLabel_;    /* BIN 基地址后面的十六进制说明 */
-    bool binBaseAddressLocked_;       /* V2 设备固定 0x08006000，禁止修改 */
+    QLabel *baseAddressHintLabel_;    /* Hexadecimal note behind the BIN base address */
+    bool binBaseAddressLocked_;       /* V2 boards are fixed at 0x08006000, not editable */
 
-    /* 选项区 */
+    /* Options section */
     QLineEdit *iapVidEdit_;
     QLineEdit *iapPidEdit_;
 
-    /* 进度与日志 */
+    /* Progress and log */
     QProgressBar *progressBar_;
     QLabel *progressLabel_;
     QTextEdit *logView_;
     QLabel *logTitleLabel_;
 
-    /* 按钮 */
+    /* Buttons */
     QPushButton *startButton_;
-    QPushButton *cancelButton_;
     QPushButton *exitButton_;
 
-    /* 菜单 */
+    /* Menus */
     QMenu *fileMenu_;
     QMenu *toolMenu_;
     QMenu *viewMenu_;
@@ -158,11 +161,11 @@ private:
     QActionGroup *langActionGroup_;
     QList<QAction *> langActions_;
 
-    /* 主题菜单（跟随系统 / 浅色 / 深色） */
+    /* Theme menu (follow system / light / dark) */
     QActionGroup *themeActionGroup_;
     QList<QAction *> themeActions_;
 
-    /* 分组框与行标题（语言切换时需要重新翻译） */
+    /* Group boxes and row captions */
     QGroupBox *deviceGroup_;
     QGroupBox *fwGroup_;
     QGroupBox *optGroup_;
@@ -176,18 +179,18 @@ private:
     QLabel *iapPidLabel_;
     QLabel *iapHintLabel_;
 
-    /* 升级线程 */
+    /* Upgrade thread */
     IapWorker *worker_;
     QThread *workerThread_;
     bool upgrading_;
 
-    /* 状态 */
+    /* State */
     QList<Ch375DeviceInfo> devices_;
     int appDeviceIndex_;
     DeviceMode deviceMode_;
-    int versionQueriedIndex_;   /* 已查询过版本的设备索引，避免重复下发命令 */
+    int versionQueriedIndex_;   /* Device index whose version was already queried */
 
-    /* 重新翻译时用于重建动态文本的原始状态 */
+    /* Raw state kept so dynamic texts can be rebuilt */
     QString deviceDetectError_;
     bool versionValid_;
     quint8 swVersion_;
@@ -196,7 +199,7 @@ private:
     enum class ProgressState { Idle, Running, Succeeded, Failed };
     ProgressState progressState_;
 
-    /* 日志条目（用于主题切换后按新配色重绘） */
+    /* Log entries (used to repaint with new colours after a theme change) */
     QList<LogEntry> logEntries_;
 };
 

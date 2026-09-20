@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 主题管理（浅色 / 深色，跟随系统）
+ * Theme management (light / dark, follow the system setting)
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -14,13 +14,17 @@
 #include <QPalette>
 
 /**
- * 界面主题管理。
+ * UI theme management.
  *
- * - Qt 6.5 及以上：通过 QStyleHints::colorSchemeChanged 实时跟随系统深浅色切换；
- * - Qt 5（回退）：启动时读取 Windows 注册表 AppsUseLightTheme 判断。
+ * - Qt 6.5 and newer: follows the system light/dark switch live through
+ *   QStyleHints::colorSchemeChanged.
+ * - Qt 5 (fallback): reads the Windows registry value AppsUseLightTheme once
+ *   at start-up.
  *
- * 深色模式采用 Fusion 风格 + 自定义深色 QPalette，保证静态编译下也能正确显示
- * （静态构建通常只带 windowsvista 风格插件，原生风格不一定跟随系统深色设置）。
+ * Dark mode uses the Fusion style plus a custom dark QPalette so that it also
+ * renders correctly in a static build (which normally only ships the
+ * windowsvista style plugin, and the native style does not necessarily follow
+ * the system dark setting).
  */
 class ThemeManager : public QObject
 {
@@ -28,25 +32,25 @@ class ThemeManager : public QObject
 
 public:
     enum class Mode {
-        Auto,   /* 跟随系统 */
-        Light,  /* 强制浅色 */
-        Dark    /* 强制深色 */
+        Auto,   /* Follow the system */
+        Light,  /* Force light */
+        Dark    /* Force dark */
     };
 
     static ThemeManager *instance();
 
     Mode mode() const { return mode_; }
 
-    /** 当前实际生效的是否为深色 */
+    /** Whether dark mode is actually in effect */
     bool isDark() const;
 
-    /** 系统是否处于深色模式（与用户设置无关） */
+    /** Whether the system prefers dark, independent of the user setting */
     static bool systemPrefersDark();
 
-    /** 菜单显示名（随界面语言变化） */
+    /** Name shown in the menu (follows the UI language) */
     static QString modeName(Mode mode);
 
-    /** 应用当前主题（切换语言 / 系统主题变化后也会调用） */
+    /** Apply the current theme (also called after a language / system change) */
     void apply();
 
 public Q_SLOTS:

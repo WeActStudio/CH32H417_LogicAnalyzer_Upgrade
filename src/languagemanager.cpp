@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 语言管理（中文 / 英文切换、跟随系统语言）
+ * UI language management (English / Simplified Chinese, follow-system option)
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -24,7 +24,7 @@ const char *kSettingsOrg = "WeActStudio";
 const char *kSettingsApp = "CH32H417 Logic Analyzer Upgrade";
 const char *kSettingsKey = "language";
 
-/* 翻译文件编译进 exe 资源，路径固定，不依赖外部文件 */
+/* The translations are compiled into the executable, no external file needed */
 const char *kQmPrefix = ":/i18n/";
 
 QString qmFileName(LanguageManager::Language lang)
@@ -34,11 +34,12 @@ QString qmFileName(LanguageManager::Language lang)
         return QStringLiteral("app_zh_CN.qm");
     case LanguageManager::Language::English:
     default:
-        return QStringLiteral("app_en.qm");
+        /* English is the source language, there is no app_en.qm */
+        return QString();
     }
 }
 
-/** 系统语言 -> 支持的语言；不支持时回退英文 */
+/** Map the system language onto a supported language; fall back to English */
 LanguageManager::Language detectSystemLanguage()
 {
     const QLocale locale = QLocale::system();
@@ -52,12 +53,12 @@ LanguageManager::Language detectSystemLanguage()
         break;
     }
 
-    /* 进一步按国家/地区判断（例如 zh_TW 也归到中文） */
-    const QString name = locale.name();      /* 形如 zh_CN / en_US */
+    /* Fall back to the territory, so that zh_TW is also treated as Chinese */
+    const QString name = locale.name();      /* e.g. zh_CN / en_US */
     if (name.startsWith(QLatin1String("zh"), Qt::CaseInsensitive))
         return LanguageManager::Language::ChineseSimplified;
 
-    /* 不支持的语言：显示英文 */
+    /* Unsupported language: use English */
     return LanguageManager::Language::English;
 }
 
@@ -65,7 +66,7 @@ LanguageManager::Language detectSystemLanguage()
 
 LanguageManager::LanguageManager(QObject *parent)
     : QObject(parent)
-    , preference_(Preference::Auto)
+    , preference_(Preference::English)   /* English is the default UI language */
     , translator_(nullptr)
     , current_(Language::English)
 {
@@ -88,11 +89,11 @@ LanguageManager *LanguageManager::instance()
 
 QStringList LanguageManager::preferenceNames()
 {
-    /* 与 Preference 枚举顺序一致：Auto / English / ChineseSimplified */
+    /* Same order as the Preference enum: Auto / English / ChineseSimplified */
     return QStringList()
-           << QCoreApplication::translate("LanguageManager", "跟随系统(&A)")
+           << QCoreApplication::translate("LanguageManager", "Follow System(&A)")
            << QCoreApplication::translate("LanguageManager", "English(&E)")
-           << QCoreApplication::translate("LanguageManager", "简体中文(&C)");
+           << QCoreApplication::translate("LanguageManager", "Simplified Chinese(&C)");
 }
 
 LanguageManager::Language LanguageManager::resolvedLanguage() const
@@ -120,7 +121,7 @@ QString LanguageManager::languageDisplayName() const
 {
     switch (resolvedLanguage()) {
     case Language::ChineseSimplified:
-        return QCoreApplication::translate("LanguageManager", "简体中文");
+        return QCoreApplication::translate("LanguageManager", "Simplified Chinese");
     case Language::English:
     default:
         return QCoreApplication::translate("LanguageManager", "English");
@@ -130,7 +131,7 @@ QString LanguageManager::languageDisplayName() const
 void LanguageManager::loadFromSettings()
 {
     QSettings settings(kSettingsOrg, kSettingsApp);
-    const QString saved = settings.value(kSettingsKey, QStringLiteral("auto")).toString();
+    const QString saved = settings.value(kSettingsKey, QStringLiteral("en")).toString();
 
     if (saved.compare(QLatin1String("zh_CN"), Qt::CaseInsensitive) == 0
         || saved.compare(QLatin1String("zh"), Qt::CaseInsensitive) == 0)
@@ -163,8 +164,25 @@ void LanguageManager::saveToSettings()
     settings.setValue(kSettingsKey, value);
 }
 
+void LanguageManager::uninstallTranslator()
+{
+    if (translator_) {
+        qApp->removeTranslator(translator_);
+        delete translator_;
+        translator_ = nullptr;
+    }
+}
+
 bool LanguageManager::loadLanguage(Language lang)
 {
+    /* English is the source language of every UI string: nothing to load,
+       just drop the Chinese translator if one is installed. */
+    if (lang == Language::English) {
+        uninstallTranslator();
+        current_ = Language::English;
+        return true;
+    }
+
     QTranslator *translator = new QTranslator(qApp);
     const QString path = QString::fromLatin1(kQmPrefix) + qmFileName(lang);
 
@@ -195,12 +213,12 @@ void LanguageManager::apply()
 
     Q_EMIT languageChanged(current_);
 
-    /* 通知所有窗口：界面文字需要重新翻译 */
+    /* Tell every window that its texts must be retranslated */
     QWidgetList widgets = QApplication::topLevelWidgets();
     for (QWidget *widget : widgets)
         QApplication::postEvent(widget, new QEvent(QEvent::LanguageChange));
 
-    /* 非顶层窗口（如内嵌对话框）也一并刷新 */
+    /* Non top level widgets (embedded dialogs and the like) too */
     for (QWidget *widget : widgets) {
         QList<QWidget *> children = widget->findChildren<QWidget *>();
         for (QWidget *child : children)

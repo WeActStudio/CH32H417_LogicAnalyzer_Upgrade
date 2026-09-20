@@ -27,6 +27,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 
 /*
  * Self-contained logging: messages are handed to the callback registered with
@@ -76,6 +77,31 @@ static void ch375_log(int level, const char *fmt, ...)
  * ============================================================================ */
 
 static HMODULE ch375_dll_handle = NULL;
+
+/* Resolved path of the DLL currently loaded, empty until ch375_init() succeeds */
+static char ch375_dll_path[MAX_PATH] = "";
+
+/**
+ * Full path of the loaded CH375 DLL ("" when no DLL is loaded).
+ * Handy for diagnostics: it tells which copy of CH375DLL was actually picked up.
+ */
+const char *ch375_loaded_dll_path(void)
+{
+    return ch375_dll_path;
+}
+
+/* Log where the DLL was loaded from (GetModuleFileName on the module handle) */
+static void log_dll_path(void)
+{
+    char path[MAX_PATH];
+
+    if (!GetModuleFileNameA(ch375_dll_handle, path, MAX_PATH))
+        return;
+
+    path[MAX_PATH - 1] = '\0';
+    memcpy(ch375_dll_path, path, MAX_PATH);
+    ch375_info("CH375DLL loaded from: %s", ch375_dll_path);
+}
 
 /* Device management */
 static CH375OpenDevice_func pCH375OpenDevice = NULL;
@@ -175,6 +201,9 @@ int ch375_init(void)
         ch375_warn("Loaded CH375DLL.DLL (32-bit), consider using 64-bit version");
     }
 
+    /* Report which copy of the DLL was actually loaded */
+    log_dll_path();
+
     /* Resolve the mandatory entry points */
     LOAD_FUNC(CH375OpenDevice);
     LOAD_FUNC(CH375CloseDevice);
@@ -222,8 +251,10 @@ int ch375_init(void)
 void ch375_cleanup(void)
 {
     if (ch375_dll_handle != NULL) {
-        FreeLibrary(ch375_dll_handle);
+        const HMODULE handle = ch375_dll_handle;
+        FreeLibrary(handle);
         ch375_dll_handle = NULL;
+        memset(ch375_dll_path, 0, sizeof(ch375_dll_path));
 
         /* Drop every resolved entry point */
         pCH375OpenDevice = NULL;

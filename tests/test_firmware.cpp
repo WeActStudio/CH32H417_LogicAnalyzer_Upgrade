@@ -14,7 +14,7 @@ static void check(bool cond, const QString &what)
         failures++;
 }
 
-/* 构造一条带正确校验和的 HEX 记录 */
+/* Build one HEX record with a correct checksum */
 static QString hexRecord(unsigned addr, unsigned type, const QByteArray &data)
 {
     unsigned sum = (unsigned)data.size() + ((addr >> 8) & 0xFF) + (addr & 0xFF) + type;
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     const QString dir = QDir::tempPath() + "/ch417_fwtest";
     QDir().mkpath(dir);
 
-    /* ---------- 用例 1：带空洞的 HEX ---------- */
+    /* ---------- Case 1: HEX containing a gap ---------- */
     {
         QByteArray a(16, '\x00');
         for (int i = 0; i < 16; ++i) a[i] = (char)(0x10 + i);
@@ -67,9 +67,9 @@ int main(int argc, char **argv)
         upper.append((char)0x00);
 
         QStringList lines;
-        lines << hexRecord(0x0000, 0x04, upper);   /* 扩展线性地址 0x08000000 */
+        lines << hexRecord(0x0000, 0x04, upper);   /* extended linear address 0x08000000 */
         lines << hexRecord(0x6000, 0x00, a);       /* 0x08006000 */
-        lines << hexRecord(0x6020, 0x00, b);       /* 0x08006020，中间 16 字节空洞 */
+        lines << hexRecord(0x6020, 0x00, b);       /* 0x08006020, leaving a 16 byte gap */
         lines << QString(":00000001FF");
 
         const QString path = dir + "/gap.hex";
@@ -78,18 +78,18 @@ int main(int argc, char **argv)
         FirmwareImage img;
         QString err;
         const bool ok = firmware_load(path, 0x08006000u, img, err);
-        check(ok, QString("HEX 解析成功 (%1)").arg(err));
-        check(img.fromHex, "识别为 HEX 格式");
+        check(ok, QString("HEX parsed (%1)").arg(err));
+        check(img.fromHex, "detected as HEX format");
         check(img.startAddress == 0x08006000u,
-              QString("起始地址 = 0x%1").arg(img.startAddress, 8, 16, QChar('0')));
-        check(img.data.size() == 36, QString("镜像大小 = %1 (期望 36)").arg(img.data.size()));
-        check((unsigned char)img.data[0] == 0x10, "首字节 = 0x10");
-        check((unsigned char)img.data[15] == 0x1F, "第 16 字节 = 0x1F");
-        check((unsigned char)img.data[16] == 0xFF, "空洞填充为 0xFF");
-        check((unsigned char)img.data[32] == 0xA0, "空洞后首字节 = 0xA0");
+              QString("start address = 0x%1").arg(img.startAddress, 8, 16, QChar('0')));
+        check(img.data.size() == 36, QString("image size = %1 (expected 36)").arg(img.data.size()));
+        check((unsigned char)img.data[0] == 0x10, "first byte = 0x10");
+        check((unsigned char)img.data[15] == 0x1F, "byte 16 = 0x1F");
+        check((unsigned char)img.data[16] == 0xFF, "gap filled with 0xFF");
+        check((unsigned char)img.data[32] == 0xA0, "first byte after the gap = 0xA0");
     }
 
-    /* ---------- 用例 2：BIN ---------- */
+    /* ---------- Case 2: raw BIN ---------- */
     {
         QByteArray raw(300, '\x00');
         for (int i = 0; i < raw.size(); ++i) raw[i] = (char)i;
@@ -100,19 +100,20 @@ int main(int argc, char **argv)
         FirmwareImage img;
         QString err;
         const bool ok = firmware_load(path, 0x08006000u, img, err);
-        check(ok, QString("BIN 解析成功 (%1)").arg(err));
-        check(!img.fromHex, "识别为 BIN 格式");
-        check(img.startAddress == 0x08006000u, "BIN 使用指定基地址");
-        check(img.data.size() == 300, QString("BIN 大小 = %1").arg(img.data.size()));
+        check(ok, QString("BIN parsed (%1)").arg(err));
+        check(!img.fromHex, "detected as BIN format");
+        check(img.startAddress == 0x08006000u, "BIN uses the given base address");
+        check(img.data.size() == 300, QString("BIN size = %1").arg(img.data.size()));
     }
 
-    /* ---------- 用例 3：HEX 校验和错误必须被拒绝 ---------- */
+    /* ---------- Case 3: a bad HEX checksum must be rejected ---------- */
     {
         QByteArray a(4, '\x11');
         const QString path = dir + "/bad.hex";
         QString text = hexRecord(0x6000, 0x00, a) + "\r\n:00000001FF";
 
-        /* 破坏最后一条数据记录的校验和（保持行结构完整） */
+        /* Corrupt the checksum of the last data record, keeping the line
+           structure intact */
         const int csPos = text.indexOf('\n') - 3;   /* [cs1][cs2][\r][\n] */
         text.replace(csPos, 2, "00");
 
@@ -121,14 +122,14 @@ int main(int argc, char **argv)
         FirmwareImage img;
         QString err;
         const bool ok = firmware_load(path, 0x08006000u, img, err);
-        check(!ok, QString("校验和错误被拒绝 (%1)").arg(err));
+        check(!ok, QString("checksum error rejected (%1)").arg(err));
     }
 
-    /* ---------- 用例 4：空文件 / 不存在的文件 ---------- */
+    /* ---------- Case 4: missing file ---------- */
     {
         FirmwareImage img;
         QString err;
-        check(!firmware_load(dir + "/no_such_file.bin", 0, img, err), "不存在的文件被拒绝");
+        check(!firmware_load(dir + "/no_such_file.bin", 0, img, err), "missing file rejected");
     }
 
     printf("\n%s\n", failures == 0

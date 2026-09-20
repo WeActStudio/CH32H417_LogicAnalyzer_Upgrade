@@ -189,6 +189,12 @@ int ch375_init(void);
 void ch375_cleanup(void);
 int ch375_is_loaded(void);
 
+/**
+ * Full path of the CH375 DLL currently loaded, "" when no DLL is loaded.
+ * Useful for diagnostics: it shows which copy of CH375DLL was picked up.
+ */
+const char *ch375_loaded_dll_path(void);
+
 unsigned long ch375_get_version(void);
 
 /* Device management */

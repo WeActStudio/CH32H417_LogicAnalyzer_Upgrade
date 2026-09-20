@@ -1,7 +1,12 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 界面语言单元测试：验证中英文翻译文件与语言选择逻辑
+ * Unit test for the UI language: verifies the compiled translation and the
+ * language selection logic.
+ *
+ * English is the source language of every UI string, so in English mode the
+ * translated text must be identical to the source text, and in Chinese mode it
+ * must come from translations/app_zh_CN.ts.
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -40,28 +45,32 @@ int main(int argc, char *argv[])
 
     std::printf("system locale: %s\n", qPrintable(QLocale::system().name()));
 
-    /* ---------- 1. 英文翻译 ---------- */
+    /* ---------- 1. English (the source language) ---------- */
     std::printf("== English ==\n");
     LanguageManager::instance()->setPreference(LanguageManager::Preference::English);
     CHECK(LanguageManager::instance()->languageCode() == "en", "languageCode() == en");
-    CHECK(T("MainWindow", "设备") == "Device", "设备 -> Device");
-    CHECK(T("MainWindow", "固件文件") == "Firmware File", "固件文件 -> Firmware File");
-    CHECK(T("MainWindow", "IAP 参数") == "IAP Parameters", "IAP 参数 -> IAP Parameters");
-    CHECK(T("MainWindow", "就绪") == "Ready", "就绪 -> Ready");
-    CHECK(T("MainWindow", "开始升级(&S)") == "&Start Upgrade", "开始升级(&S) -> &Start Upgrade");
-    CHECK(T("IapWorker", "编程 FLASH ...") == "Programming FLASH ...",
-          "IAP 编程提示 -> Programming FLASH ...");
-    CHECK(T("LanguageManager", "简体中文") == "Simplified Chinese", "语言名 -> Simplified Chinese");
+    CHECK(T("MainWindow", "Device") == "Device", "Device stays English");
+    CHECK(T("MainWindow", "Firmware File") == "Firmware File", "Firmware File stays English");
+    CHECK(T("MainWindow", "IAP Parameters") == "IAP Parameters", "IAP Parameters stays English");
+    CHECK(T("MainWindow", "Ready") == "Ready", "Ready stays English");
+    CHECK(T("MainWindow", "Start Upgrade(&S)") == "Start Upgrade(&S)", "Start Upgrade stays English");
+    CHECK(T("IapWorker", "Programming FLASH ...") == "Programming FLASH ...",
+          "IAP progress text stays English");
+    CHECK(T("LanguageManager", "Simplified Chinese") == "Simplified Chinese",
+          "language name stays English");
 
-    /* ---------- 2. 中文翻译 ---------- */
+    /* ---------- 2. Simplified Chinese ---------- */
     std::printf("== Chinese ==\n");
     LanguageManager::instance()->setPreference(
         LanguageManager::Preference::ChineseSimplified);
     CHECK(LanguageManager::instance()->languageCode() == "zh_CN", "languageCode() == zh_CN");
-    CHECK(T("MainWindow", "设备") == "设备", "设备 保持中文");
-    CHECK(T("MainWindow", "就绪") == "就绪", "就绪 保持中文");
+    CHECK(T("MainWindow", "Device") == QString::fromUtf8("设备"), "Device -> 设备");
+    CHECK(T("MainWindow", "Firmware File") == QString::fromUtf8("固件文件"), "Firmware File -> 固件文件");
+    CHECK(T("MainWindow", "Ready") == QString::fromUtf8("就绪"), "Ready -> 就绪");
+    CHECK(T("IapWorker", "Programming FLASH ...") == QString::fromUtf8("编程 FLASH ..."),
+          "Programming FLASH ... -> 编程 FLASH ...");
 
-    /* ---------- 3. 跟随系统 ---------- */
+    /* ---------- 3. Follow the system ---------- */
     std::printf("== Auto ==\n");
     LanguageManager::instance()->setPreference(LanguageManager::Preference::Auto);
     const LanguageManager::Language autoLang =
@@ -72,16 +81,17 @@ int main(int argc, char *argv[])
         systemIsChinese ? LanguageManager::Language::ChineseSimplified
                         : LanguageManager::Language::English;
     CHECK(autoLang == expected,
-          qPrintable(QString("Auto 解析为 %1（系统 %2）")
+          qPrintable(QString("Auto resolves to %1 (system %2)")
                          .arg(LanguageManager::instance()->languageCode())
                          .arg(QLocale::system().name())));
 
-    /* 不支持的语言必须回退英文：用非中文系统校验一次 */
+    /* Unsupported languages must fall back to English: verified on a
+       non-Chinese system */
     if (!systemIsChinese)
-        CHECK(LanguageManager::instance()->languageCode() == "en", "非中文系统回退英文");
+        CHECK(LanguageManager::instance()->languageCode() == "en", "non-Chinese system falls back to English");
 
-    /* ---------- 4. 菜单项齐全 ---------- */
-    CHECK(LanguageManager::preferenceNames().size() == 3, "3 个语言选项");
+    /* ---------- 4. Menu entries complete ---------- */
+    CHECK(LanguageManager::preferenceNames().size() == 3, "3 language options");
 
     std::printf("\npassed: %d  failed: %d\n", g_passed, g_failed);
     if (g_failed == 0)

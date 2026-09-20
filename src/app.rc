@@ -1,9 +1,10 @@
-/* Windows 资源：程序图标与版本信息（保持 ASCII 以免 windres 编码问题） */
+/* Windows resources: application icon and version information.
+ * ASCII only, to avoid windres encoding problems. */
 #include <windows.h>
 
-/* 应用程序图标（标题栏 / 任务栏 / 资源管理器）
- * 必须用数值 ID：windres 才会同时生成 RT_ICON 与 RT_GROUP_ICON，
- * 资源管理器才能显示 exe 图标。 */
+/* Application icon (title bar / task bar / Explorer).
+ * A numeric ID is required: only then does windres emit both RT_ICON and
+ * RT_GROUP_ICON, which is what Explorer needs to show the exe icon. */
 #define IDI_APP_ICON 101
 IDI_APP_ICON ICON DISCARDABLE "../resources/icons/logo.ico"
 

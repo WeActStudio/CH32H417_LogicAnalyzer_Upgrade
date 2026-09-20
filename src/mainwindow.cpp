@@ -1,7 +1,7 @@
 /*
- * CH32H417 逻辑分析仪固件升级工具
+ * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * 主窗口实现
+ * Main window implementation
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -50,12 +50,14 @@ namespace {
 const char *kSettingsOrg = "WeActStudio";
 const char *kSettingsApp = "CH32H417 Logic Analyzer Upgrade";
 
-/* 设备列表里单行最多显示的字符数，超出部分省略并在 tooltip 里给出完整信息 */
+/* Maximum number of characters shown on one line of the device list; anything
+ * longer is elided and the full text is offered as a tooltip */
 const int kDeviceLabelMaxChars = 56;
 
 /*
- * 中间省略：头部保留 VID/PID，尾部保留型号与序列号（这两段最有辨识度），
- * 被截掉的是中间相对次要的部分。完整内容始终可在 tooltip 中查看。
+ * Elide in the middle: the head keeps the VID/PID and the tail keeps the model
+ * name and serial number, the two most recognisable parts. The full text is
+ * always available in the tooltip.
  */
 QString elideMiddle(const QString &text, int maxChars)
 {
@@ -70,35 +72,19 @@ QString elideMiddle(const QString &text, int maxChars)
 }
 
 /*
- * 设备列表单行文字：索引/IAP 标记 + VID/PID + **完整型号** + 序列号。
- * 型号一律完整显示（用户靠它区分设备），长度超出时只省略序列号；
- * 完整信息仍写在 tooltip 里。
+ * One line of the device list: only the product name, e.g.
+ * "WeAct Studio Logic Analyzer V2". The mode, VID/PID, CH375 index and serial
+ * number are not shown here; the complete details stay in the tooltip.
  */
 QString deviceListLabel(const Ch375DeviceInfo &info)
 {
-    /* 运行模式显示 CH375 索引；IAP 模式没有 CH375 索引，改用通道标记 */
-    const QString tag = info.isIap ? QStringLiteral("IAP")
-                                   : QStringLiteral("#%1").arg(info.index);
-
-    QString label = QStringLiteral("%1  %2  %3")
-                        .arg(tag)
-                        .arg(info.idString())
-                        .arg(info.modelName());
-
-    if (info.serial.isEmpty())
-        return label;
-
-    const QLatin1String snPrefix("  SN:");
-    const int avail = kDeviceLabelMaxChars - label.size() - snPrefix.size();
-    if (avail >= 8)
-        label += snPrefix + elideMiddle(info.serial, avail);
-
-    return label;
+    return elideMiddle(info.modelName(), kDeviceLabelMaxChars);
 }
 
 MainWindow *g_mainWindow = nullptr;
 
-/* CH375 DLL 内部日志桥接到界面（可能在后台线程被调用） */
+/* Bridge the internal CH375 DLL log onto the UI (may be called from a worker
+ * thread) */
 void ch375LogBridge(int level, const char *message)
 {
     if (!g_mainWindow || !message)
@@ -135,7 +121,6 @@ MainWindow::MainWindow(QWidget *parent)
     , logView_(nullptr)
     , logTitleLabel_(nullptr)
     , startButton_(nullptr)
-    , cancelButton_(nullptr)
     , exitButton_(nullptr)
     , fileMenu_(nullptr)
     , toolMenu_(nullptr)
@@ -209,7 +194,7 @@ MainWindow::~MainWindow()
 }
 
 /* ==========================================================================
- * 界面搭建
+ * UI construction
  * ========================================================================== */
 
 void MainWindow::setupUi()
@@ -220,7 +205,7 @@ void MainWindow::setupUi()
     QVBoxLayout *mainLayout = new QVBoxLayout(central);
     mainLayout->setSpacing(10);
 
-    /* ---------- 设备区 ---------- */
+    /* ---------- Device section ---------- */
     deviceGroup_ = new QGroupBox(central);
     QFormLayout *deviceLayout = new QFormLayout(deviceGroup_);
 
@@ -244,7 +229,7 @@ void MainWindow::setupUi()
 
     mainLayout->addWidget(deviceGroup_);
 
-    /* ---------- 固件区 ---------- */
+    /* ---------- Firmware section ---------- */
     fwGroup_ = new QGroupBox(central);
     QFormLayout *fwLayout = new QFormLayout(fwGroup_);
 
@@ -276,7 +261,7 @@ void MainWindow::setupUi()
 
     mainLayout->addWidget(fwGroup_);
 
-    /* ---------- IAP 选项 ---------- */
+    /* ---------- IAP options ---------- */
     optGroup_ = new QGroupBox(central);
     QHBoxLayout *optLayout = new QHBoxLayout(optGroup_);
 
@@ -299,7 +284,7 @@ void MainWindow::setupUi()
 
     mainLayout->addWidget(optGroup_);
 
-    /* ---------- 进度 ---------- */
+    /* ---------- Progress ---------- */
     QHBoxLayout *progressLayout = new QHBoxLayout();
     progressBar_ = new QProgressBar(central);
     progressBar_->setRange(0, 100);
@@ -311,7 +296,7 @@ void MainWindow::setupUi()
     progressLayout->addWidget(progressLabel_);
     mainLayout->addLayout(progressLayout);
 
-    /* ---------- 日志 ---------- */
+    /* ---------- Log ---------- */
     logTitleLabel_ = new QLabel(central);
     mainLayout->addWidget(logTitleLabel_);
     logView_ = new QTextEdit(central);
@@ -322,15 +307,12 @@ void MainWindow::setupUi()
     logView_->setMinimumHeight(180);
     mainLayout->addWidget(logView_, 1);
 
-    /* ---------- 按钮 ---------- */
+    /* ---------- Buttons ---------- */
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     buttonLayout->addStretch(1);
     startButton_ = new QPushButton(central);
-    cancelButton_ = new QPushButton(central);
     exitButton_ = new QPushButton(central);
-    cancelButton_->setEnabled(false);
     buttonLayout->addWidget(startButton_);
-    buttonLayout->addWidget(cancelButton_);
     buttonLayout->addWidget(exitButton_);
     mainLayout->addLayout(buttonLayout);
 
@@ -339,7 +321,6 @@ void MainWindow::setupUi()
     connect(refreshButton_, &QPushButton::clicked, this, &MainWindow::onRefreshDevices);
     connect(browseButton_, &QPushButton::clicked, this, &MainWindow::onBrowseFirmware);
     connect(startButton_, &QPushButton::clicked, this, &MainWindow::onStartUpgrade);
-    connect(cancelButton_, &QPushButton::clicked, this, &MainWindow::onCancelUpgrade);
     connect(exitButton_, &QPushButton::clicked, this, &MainWindow::close);
     connect(fileEdit_, &QLineEdit::textChanged, this, &MainWindow::onFirmwarePathChanged);
     connect(deviceCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -366,7 +347,7 @@ void MainWindow::createMenus()
     connect(refreshAction_, &QAction::triggered, this, &MainWindow::onRefreshDevices);
     connect(clearLogAction_, &QAction::triggered, this, &MainWindow::onClearLog);
 
-    /* ---------- 主题菜单（浅色 / 深色 / 跟随系统） ---------- */
+    /* ---------- Theme menu (light / dark / follow system) ---------- */
     viewMenu_ = menuBar()->addMenu(QString());
     themeActionGroup_ = new QActionGroup(this);
     themeActionGroup_->setExclusive(true);
@@ -384,7 +365,7 @@ void MainWindow::createMenus()
     connect(ThemeManager::instance(), &ThemeManager::themeChanged,
             this, &MainWindow::onThemeChanged);
 
-    /* ---------- 语言菜单 ---------- */
+    /* ---------- Language menu ---------- */
     langMenu_ = menuBar()->addMenu(QString());
     langActionGroup_ = new QActionGroup(this);
     langActionGroup_->setExclusive(true);
@@ -403,81 +384,79 @@ void MainWindow::createMenus()
     helpMenu_ = menuBar()->addMenu(QString());
     aboutAction_ = new QAction(this);
     helpMenu_->addAction(aboutAction_);
-    connect(aboutAction_, &QAction::triggered, this, &MainWindow::onAbout);
-
-    /* 语言切换后同步菜单勾选状态 */
-    connect(LanguageManager::instance(), &LanguageManager::languageChanged,
-            this, &MainWindow::onLanguageChanged);
+    connect(aboutAction_, &QAction::triggered, this, &MainWindow::showAbout);
 }
 
-/** 把所有界面文字设置为当前语言（构造时与切换语言时都会调用） */
+/** Apply every UI text for the current language (called on construction and
+ *  whenever the language changes) */
 void MainWindow::retranslateUi()
 {
-    setWindowTitle(tr("CH32H417 逻辑分析仪固件升级工具"));
+    setWindowTitle(tr("CH32H417 Logic Analyzer Firmware Upgrade Tool"));
 
-    /* 分组框 */
-    deviceGroup_->setTitle(tr("设备"));
-    fwGroup_->setTitle(tr("固件文件"));
-    optGroup_->setTitle(tr("IAP 参数"));
+    /* Group boxes */
+    deviceGroup_->setTitle(tr("Device"));
+    fwGroup_->setTitle(tr("Firmware File"));
+    optGroup_->setTitle(tr("IAP Settings"));
 
-    /* 行标题 */
-    deviceListLabel_->setText(tr("设备列表："));
-    deviceStatusTitleLabel_->setText(tr("设备状态："));
-    deviceVersionTitleLabel_->setText(tr("固件版本："));
-    filePathLabel_->setText(tr("文件路径："));
-    firmwareInfoTitleLabel_->setText(tr("固件信息："));
-    /* 输入框里只填十六进制数字，0x 前缀由标签给出 */
-    baseAddressLabel_->setText(tr("BIN 基地址：0x"));
+    /* Row captions */
+    deviceListLabel_->setText(tr("Device List:"));
+    deviceStatusTitleLabel_->setText(tr("Device Status:"));
+    deviceVersionTitleLabel_->setText(tr("Firmware Version:"));
+    filePathLabel_->setText(tr("File Path:"));
+    firmwareInfoTitleLabel_->setText(tr("Firmware Info:"));
+    /* The line edit only holds the hexadecimal digits, the 0x prefix comes
+       from the caption */
+    baseAddressLabel_->setText(tr("BIN Base Address: 0x"));
     updateBaseAddressHint();
-    iapVidLabel_->setText(tr("VID：0x"));
-    iapPidLabel_->setText(tr("PID：0x"));
-    iapHintLabel_->setText(tr("默认值 VID=0x1A86 PID=0xFE17"));
+    iapVidLabel_->setText(tr("VID: 0x"));
+    iapPidLabel_->setText(tr("PID: 0x"));
+    iapHintLabel_->setText(tr("Defaults: VID=0x1A86 PID=0xFE17"));
 
-    /* 控件 */
-    refreshButton_->setText(tr("刷新(&R)"));
-    browseButton_->setText(tr("浏览(&B)..."));
-    baseAddressEdit_->setToolTip(tr(".bin 文件的烧录起始地址（十六进制，例如 08006000）"));
-    fileEdit_->setPlaceholderText(tr("选择或直接拖入 .hex / .bin 固件文件"));
+    /* Widgets */
+    refreshButton_->setText(tr("Refresh(&R)"));
+    browseButton_->setText(tr("Browse(&B)..."));
+    baseAddressEdit_->setToolTip(tr("Programming start address for .bin files (hexadecimal, e.g. 08006000)"));
+    fileEdit_->setPlaceholderText(tr("Select or drop a .hex / .bin firmware file"));
 
-    logTitleLabel_->setText(tr("升级日志："));
-    startButton_->setText(tr("开始升级(&S)"));
-    cancelButton_->setText(tr("取消(&C)"));
-    exitButton_->setText(tr("退出(&X)"));
+    logTitleLabel_->setText(tr("Upgrade Log"));
+    startButton_->setText(tr("Start Upgrade(&S)"));
+    exitButton_->setText(tr("Exit(&X)"));
 
     /*
-     * 菜单（事件在构造早期也可能到达，此时菜单尚未创建，需要判空）
+     * Menus (a LanguageChange event can also arrive very early during
+     * construction, when the menus do not exist yet, hence the null checks)
      */
     if (fileMenu_) {
-        fileMenu_->setTitle(tr("文件(&F)"));
-        openAction_->setText(tr("打开固件(&O)..."));
-        exitAction_->setText(tr("退出(&X)"));
-        toolMenu_->setTitle(tr("工具(&T)"));
-        refreshAction_->setText(tr("刷新设备(&R)"));
-        clearLogAction_->setText(tr("清空日志(&L)"));
-        viewMenu_->setTitle(tr("视图(&V)"));
-        langMenu_->setTitle(tr("语言(&L)"));
-        helpMenu_->setTitle(tr("帮助(&H)"));
-        aboutAction_->setText(tr("关于(&A)"));
+        fileMenu_->setTitle(tr("File(&F)"));
+        openAction_->setText(tr("Open Firmware(&O)..."));
+        exitAction_->setText(tr("Exit(&X)"));
+        toolMenu_->setTitle(tr("Tools(&T)"));
+        refreshAction_->setText(tr("Refresh Devices(&R)"));
+        clearLogAction_->setText(tr("Clear Log(&L)"));
+        viewMenu_->setTitle(tr("View(&V)"));
+        langMenu_->setTitle(tr("Language(&L)"));
+        helpMenu_->setTitle(tr("Help(&H)"));
+        aboutAction_->setText(tr("About(&A)"));
 
-        /* 语言菜单项 */
+        /* Language menu entries */
         const QStringList names = LanguageManager::preferenceNames();
         for (int i = 0; i < langActions_.size() && i < names.size(); ++i)
             langActions_.at(i)->setText(names.at(i));
 
-        /* 主题菜单项 */
+        /* Theme menu entries */
         for (int i = 0; i < themeActions_.size() && i < 3; ++i)
             themeActions_.at(i)->setText(
                 ThemeManager::modeName(static_cast<ThemeManager::Mode>(i)));
     }
 
-    /* 动态文本 */
+    /* Dynamic texts */
     updateDeviceStatusText();
     updateFirmwareInfo();
     updateProgressText();
 }
 
 /* ==========================================================================
- * 语言切换
+ * Language and theme switching
  * ========================================================================== */
 
 void MainWindow::onLanguageActionTriggered(QAction *action)
@@ -512,7 +491,7 @@ void MainWindow::onThemeChanged()
     for (int i = 0; i < themeActions_.size(); ++i)
         themeActions_.at(i)->setChecked(i == index);
 
-    /* 日志与状态文字的配色随主题变化，需要整体重绘 */
+    /* The log and status colours follow the theme, so redraw everything */
     renderLog();
     updateDeviceStatusText();
     updateFirmwareInfo();
@@ -527,7 +506,7 @@ void MainWindow::changeEvent(QEvent *event)
 }
 
 /* ==========================================================================
- * 设置存取
+ * Settings
  * ========================================================================== */
 
 void MainWindow::loadSettings()
@@ -539,8 +518,8 @@ void MainWindow::loadSettings()
     iapPidEdit_->setText(settings.value("iapPid", "FE17").toString());
     restoreGeometry(settings.value("geometry").toByteArray());
 
-    onLanguageChanged();     /* 同步语言菜单勾选状态 */
-    onThemeChanged();        /* 同步主题菜单勾选状态 */
+    onLanguageChanged();     /* sync the language menu check marks */
+    onThemeChanged();        /* sync the theme menu check marks */
 }
 
 void MainWindow::saveSettings()
@@ -554,7 +533,7 @@ void MainWindow::saveSettings()
 }
 
 /* ==========================================================================
- * 设备
+ * Devices
  * ========================================================================== */
 
 quint16 MainWindow::iapVid() const
@@ -580,13 +559,15 @@ quint32 MainWindow::binBaseAddress() const
 
 void MainWindow::updateBaseAddressHint()
 {
-    /* V2 设备会锁定地址并置灰输入框，这里不再额外提示，只保留进制说明 */
-    baseAddressHintLabel_->setText(tr("十六进制，例如 08006000"));
+    /* V2 devices lock the address and grey out the field, so no extra hint is
+       needed here, only the note about the number base */
+    baseAddressHintLabel_->setText(tr("Hexadecimal, e.g. 08006000"));
 }
 
 /*
- * WeAct Studio Logic Analyzer V2 的 APP 起始地址与 IAP 的 VID/PID 都是固定的，
- * 识别到 V2 时自动填好并禁止修改，避免用户填错把设备烧砖。
+ * On the WeAct Studio Logic Analyzer V2 both the application start address and
+ * the IAP VID/PID are fixed. When a V2 board is detected the values are filled
+ * in automatically and locked, to keep the user from bricking the device.
  */
 void MainWindow::updateV2Lock()
 {
@@ -629,14 +610,15 @@ void MainWindow::refreshDeviceList()
     deviceCombo_->clear();
 
     if (devices_.isEmpty()) {
-        deviceCombo_->addItem(tr("(未发现设备)"), -1);
+        deviceCombo_->addItem(tr("(No device found)"), -1);
         deviceCombo_->setEnabled(false);
-        deviceCombo_->setToolTip(tr("未发现设备"));
+        deviceCombo_->setToolTip(tr("No device found"));
     } else {
         for (const Ch375DeviceInfo &info : devices_) {
             const QString full = info.description();
             deviceCombo_->addItem(deviceListLabel(info), info.index);
-            /* 完整信息放进 tooltip，鼠标悬停即可看到 VID/PID/序列号 */
+            /* The full text goes into the tooltip, so hovering shows the
+               VID/PID and serial number */
             deviceCombo_->setItemData(deviceCombo_->count() - 1, full, Qt::ToolTipRole);
         }
         deviceCombo_->setEnabled(true);
@@ -646,8 +628,9 @@ void MainWindow::refreshDeviceList()
     }
 
     /*
-     * WeAct Studio Logic Analyzer V2 的 APP 起始地址固定为 0x08006000、
-     * IAP 的 VID/PID 也是固定的，不允许用户修改，避免烧错区域把设备变砖。
+     * On the WeAct Studio Logic Analyzer V2 the application start address is
+     * fixed at 0x08006000 and the IAP VID/PID are fixed as well; the user must
+     * not change them, otherwise the wrong region could be programmed.
      */
     updateV2Lock();
 
@@ -656,9 +639,10 @@ void MainWindow::refreshDeviceList()
     switch (mode) {
     case DeviceMode::AppRunning:
         /*
-         * 只在设备变化、或上次读取失败时重新读版本。
-         * 拔掉再插上时索引没变，若只用「索引变化」判断就不会重读，
-         * 会一直停在"读取失败"，所以失败时必须允许下次刷新重试。
+         * Re-read the version only when the device changed or when the previous
+         * read failed. Unplugging and plugging back in keeps the same index, so
+         * a pure "index changed" test would never re-read and the UI would stay
+         * at "read failed"; a failure must therefore allow a retry next time.
          */
         if (appDeviceIndex_ != versionQueriedIndex_ || !versionValid_) {
             versionValid_ = ch375dev_get_version(appDeviceIndex_, swVersion_, hwVersion_, error);
@@ -666,7 +650,7 @@ void MainWindow::refreshDeviceList()
                 versionQueriedIndex_ = appDeviceIndex_;
                 deviceDetectError_.clear();
             } else {
-                versionQueriedIndex_ = -2;      /* 下次刷新继续重试 */
+                versionQueriedIndex_ = -2;      /* keep retrying on the next refresh */
                 deviceDetectError_ = error;
             }
         }
@@ -675,14 +659,15 @@ void MainWindow::refreshDeviceList()
     case DeviceMode::IapBootloader:
     default:
         versionValid_ = false;
-        versionQueriedIndex_ = -2;              /* 设备不在运行模式，下次连上要重新读 */
+        versionQueriedIndex_ = -2;              /* not in application mode, re-read when it reconnects */
         break;
     }
 
     updateDeviceStatusText();
 }
 
-/** 状态文字配色：kind 0=已连接 1=IAP 模式 2=未发现（随深浅色自动调整） */
+/** Status text colours: kind 0=connected 1=IAP mode 2=not found (adapted to
+ *  light / dark automatically) */
 QString MainWindow::statusColor(int kind) const
 {
     const bool dark = ThemeManager::instance()->isDark();
@@ -696,34 +681,34 @@ QString MainWindow::statusColor(int kind) const
     }
 }
 
-/** 根据设备状态重建设备区文字（语言切换 / 主题切换时复用） */
+/** Rebuild the device section texts (reused on language / theme changes) */
 void MainWindow::updateDeviceStatusText()
 {
     switch (deviceMode_) {
     case DeviceMode::AppRunning:
         deviceStatusLabel_->setText(
-            tr("<font color='%1'>已连接（运行模式，CH375 通道）</font>").arg(statusColor(0)));
-        /* 只显示数字版本号，例如 v1.1 */
+            tr("<font color='%1'>Connected (application mode, CH375 channel)</font>").arg(statusColor(0)));
+        /* Only the numeric version is shown, e.g. v1.1 */
         deviceVersionLabel_->setText(
             versionValid_
                 ? QStringLiteral("v%1.%2").arg(swVersion_).arg(hwVersion_)
-                : tr("读取失败"));
+                : tr("Read failed"));
         deviceVersionLabel_->setToolTip(
             versionValid_
-                ? tr("软件版本：v%1　硬件版本：v%2").arg(swVersion_).arg(hwVersion_)
+                ? tr("Software version: v%1  Hardware version: v%2").arg(swVersion_).arg(hwVersion_)
                 : deviceDetectError_);
         break;
 
     case DeviceMode::IapBootloader:
         deviceStatusLabel_->setText(
-            tr("<font color='%1'>已连接（IAP 升级模式，HID 通道）</font>").arg(statusColor(1)));
+            tr("<font color='%1'>Connected (IAP upgrade mode)</font>").arg(statusColor(1)));
         deviceVersionLabel_->setText(tr("-"));
         deviceVersionLabel_->setToolTip(QString());
         break;
 
     default:
         deviceStatusLabel_->setText(
-            tr("<font color='%1'>未发现设备</font>").arg(statusColor(2)));
+            tr("<font color='%1'>No device found</font>").arg(statusColor(2)));
         deviceVersionLabel_->setText(tr("-"));
         deviceVersionLabel_->setToolTip(QString());
         if (!deviceDetectError_.isEmpty())
@@ -751,11 +736,11 @@ void MainWindow::onDeviceIndexChanged(int index)
     appDeviceIndex_ = devices_.at(index).index;
     deviceCombo_->setToolTip(devices_.at(index).description());
 
-    /* 切换设备后重新判断 V2 锁定（BIN 基地址 + IAP 的 VID/PID） */
+    /* Re-evaluate the V2 lock (BIN base address + IAP VID/PID) after a switch */
     updateV2Lock();
 
     if (devices_.at(index).isIap) {
-        /* IAP 模式无法查询固件版本 */
+        /* The firmware version cannot be queried in IAP mode */
         versionValid_ = false;
         versionQueriedIndex_ = -2;
         updateDeviceStatusText();
@@ -775,22 +760,22 @@ void MainWindow::onDeviceIndexChanged(int index)
 
 void MainWindow::appendCh375Log(int level, const QString &message)
 {
-    if (level > CH375_LOG_INFO)     /* 独立模式下只显示 warn/error/info */
+    if (level > CH375_LOG_INFO)     /* standalone mode shows warn/error/info only */
         return;
     appendLog(QString("[CH375] %1").arg(message), level == CH375_LOG_ERROR);
 }
 
 /* ==========================================================================
- * 固件文件
+ * Firmware file
  * ========================================================================== */
 
 void MainWindow::onBrowseFirmware()
 {
     const QString path = QFileDialog::getOpenFileName(
         this,
-        tr("选择固件文件"),
+        tr("Select Firmware File"),
         QFileInfo(fileEdit_->text()).absolutePath(),
-        tr("固件文件 (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;二进制文件 (*.bin);;所有文件 (*.*)"));
+        tr("Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)"));
 
     if (!path.isEmpty())
         fileEdit_->setText(path);
@@ -808,7 +793,7 @@ void MainWindow::updateFirmwareInfo()
 
     if (path.isEmpty() || !QFileInfo(path).exists()) {
         firmwareInfoLabel_->setText(
-            tr("<font color='%1'>尚未选择有效的固件文件</font>").arg(statusColor(2)));
+            tr("<font color='%1'>No valid firmware file selected</font>").arg(statusColor(2)));
         return;
     }
 
@@ -822,7 +807,7 @@ void MainWindow::updateFirmwareInfo()
     }
 
     firmwareInfoLabel_->setText(
-        tr("%1　大小：%2　地址：0x%3 - 0x%4　校验和：0x%5")
+        tr("%1  Size: %2  Address: 0x%3 - 0x%4  Checksum: 0x%5")
             .arg(image.fromHex ? tr("Intel HEX") : tr("BIN"))
             .arg(firmware_format_size(image.data.size()))
             .arg(image.startAddress, 8, 16, QChar('0'))
@@ -831,7 +816,7 @@ void MainWindow::updateFirmwareInfo()
 }
 
 /* ==========================================================================
- * 升级流程
+ * Upgrade sequence
  * ========================================================================== */
 
 void MainWindow::setBusy(bool busy)
@@ -842,11 +827,11 @@ void MainWindow::setBusy(bool busy)
     browseButton_->setEnabled(!busy);
     fileEdit_->setEnabled(!busy);
     deviceCombo_->setEnabled(!busy && !devices_.isEmpty());
-    /* V2 锁定的输入框始终保持只读，不随 busy 状态恢复为可编辑 */
+    /* Fields locked by the V2 detection stay read only and must not become
+       editable again just because the busy state changed */
     baseAddressEdit_->setEnabled(!busy && !binBaseAddressLocked_);
     iapVidEdit_->setEnabled(!busy && !binBaseAddressLocked_);
     iapPidEdit_->setEnabled(!busy && !binBaseAddressLocked_);
-    cancelButton_->setEnabled(busy);
 }
 
 void MainWindow::onStartUpgrade()
@@ -856,16 +841,17 @@ void MainWindow::onStartUpgrade()
 
     const QString path = fileEdit_->text().trimmed();
     if (path.isEmpty() || !QFileInfo(path).exists()) {
-        QMessageBox::warning(this, tr("提示"), tr("请先选择一个有效的固件文件。"));
+        QMessageBox::warning(this, tr("Hint"), tr("Please select a valid firmware file first."));
         return;
     }
 
     if (deviceMode_ == DeviceMode::NotFound) {
         const int ret = QMessageBox::question(
-            this, tr("未发现设备"),
-            tr("当前没有检测到 CH32H417 设备。\n\n"
-               "如果设备已经处于 IAP 模式（例如按住按键上电），可以继续升级；\n"
-               "否则请先连接设备。\n\n是否继续？"),
+            this, tr("No Device Found"),
+            tr("No CH32H417 device was detected.\n\n"
+               "If the device is already in IAP mode (for example powered up with "
+               "the button held down), you can continue;\n"
+               "otherwise please connect the device first.\n\nContinue?"),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (ret != QMessageBox::Yes)
             return;
@@ -874,7 +860,7 @@ void MainWindow::onStartUpgrade()
     FirmwareImage image;
     QString error;
     if (!firmware_load(path, binBaseAddress(), image, error)) {
-        QMessageBox::critical(this, tr("固件错误"), error);
+        QMessageBox::critical(this, tr("Firmware Error"), error);
         return;
     }
 
@@ -890,10 +876,10 @@ void MainWindow::onStartUpgrade()
     logView_->clear();
     progressBar_->setValue(0);
     progressState_ = ProgressState::Running;
-    progressLabel_->setText(tr("准备中 ..."));
+    progressLabel_->setText(tr("Preparing ..."));
     setBusy(true);
 
-    appendLog(tr("目标设备：%1").arg(deviceMode_ == DeviceMode::AppRunning
+    appendLog(tr("Target device: %1").arg(deviceMode_ == DeviceMode::AppRunning
                                     ? QString("CH375 #%1").arg(appDeviceIndex_)
                                     : QString("IAP HID (VID:0x%1 PID:0x%2)")
                                           .arg(config.iapVid, 4, 16, QChar('0'))
@@ -912,16 +898,6 @@ void MainWindow::onStartUpgrade()
     connect(workerThread_, &QThread::finished, workerThread_, &QThread::deleteLater);
 
     workerThread_->start();
-}
-
-void MainWindow::onCancelUpgrade()
-{
-    if (!upgrading_ || !worker_)
-        return;
-
-    appendLog(tr("正在请求取消 ..."));
-    cancelButton_->setEnabled(false);
-    worker_->cancel();
 }
 
 void MainWindow::onProgressUpdated(int percent, const QString &status)
@@ -944,41 +920,50 @@ void MainWindow::onUpgradeFinished(bool success, const QString &message)
     if (success) {
         progressBar_->setValue(100);
         progressState_ = ProgressState::Succeeded;
-        progressLabel_->setText(tr("升级完成"));
+        progressLabel_->setText(tr("Upgrade Complete"));
         appendLog(message);
-        QMessageBox::information(this, tr("完成"),
-                                 tr("固件升级成功！\n设备将重启并运行新固件。"));
+        QMessageBox::information(this, tr("Complete"),
+                                 tr("Firmware upgrade succeeded!\n"
+                                    "The device will restart and run the new firmware."));
     } else {
         progressState_ = ProgressState::Failed;
-        progressLabel_->setText(tr("升级失败"));
+        progressLabel_->setText(tr("Upgrade Failed"));
         appendLog(message, true);
-        QMessageBox::critical(this, tr("失败"), message);
+        appendLog(tr("Please power-cycle the device (disconnect and reconnect "
+                     "the USB cable or the power supply) and run the upgrade again."),
+                  true);
+        QMessageBox::critical(this, tr("Failed"),
+                              message + QStringLiteral("\n\n")
+                                  + tr("Please power-cycle the device (disconnect and "
+                                       "reconnect the USB cable or the power supply) "
+                                       "and run the upgrade again."));
     }
 
     QTimer::singleShot(500, this, &MainWindow::onRefreshDevices);
 }
 
-/** 根据当前状态重建进度文字（语言切换时复用） */
+/** Rebuild the progress text for the current state (reused on language switch) */
 void MainWindow::updateProgressText()
 {
     switch (progressState_) {
     case ProgressState::Running:
-        /* 升级过程中的文字由工作线程按当时语言生成，切换语言后下一条消息会更新 */
+        /* Texts produced during the upgrade come from the worker thread in the
+           language that was active then; the next message updates them */
         break;
     case ProgressState::Succeeded:
-        progressLabel_->setText(tr("升级完成"));
+        progressLabel_->setText(tr("Upgrade Complete"));
         break;
     case ProgressState::Failed:
-        progressLabel_->setText(tr("升级失败"));
+        progressLabel_->setText(tr("Upgrade Failed"));
         break;
     case ProgressState::Idle:
     default:
-        progressLabel_->setText(tr("就绪"));
+        progressLabel_->setText(tr("Ready"));
         break;
     }
 }
 
-/* 日志文字配色：跟随当前主题，深色下用亮色，保证始终可读 */
+/* Log colours follow the current theme: bright text on dark, always readable */
 QString MainWindow::logTextColor() const
 {
     if (ThemeManager::instance()->isDark())
@@ -1011,14 +996,14 @@ void MainWindow::appendLog(const QString &message, bool isError)
     entry.isError = isError;
 
     logEntries_.append(entry);
-    /* 避免长时间运行后无限增长 */
+    /* Keep the buffer from growing without bound during long sessions */
     while (logEntries_.size() > 2000)
         logEntries_.removeFirst();
 
     appendLogLine(entry);
 }
 
-/** 主题切换后按新配色重绘整段日志 */
+/** Redraw the whole log with the new colours after a theme change */
 void MainWindow::renderLog()
 {
     logView_->clear();
@@ -1032,25 +1017,41 @@ void MainWindow::onClearLog()
     logView_->clear();
 }
 
-void MainWindow::onAbout()
+void MainWindow::showAbout()
 {
     QMessageBox box(this);
-    box.setWindowTitle(tr("关于"));
+    box.setWindowTitle(tr("About"));
     box.setIconPixmap(QPixmap(QStringLiteral(":/icons/logo_128"))
                           .scaled(96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    box.setText(tr("<h3>CH32H417 逻辑分析仪固件升级工具</h3>"
-                   "<p>版本：%1</p>"
-                   "<p>基于 Qt 6 开发，使用 MSYS2 (MINGW64) 静态编译。</p>"
-                   "<p>升级流程：CH375 通道发送进入 IAP 命令 → 设备复位为 HID IAP 设备 → "
-                   "擦除 / 编程 / 校验 / 结束。</p>"
-                   "<p>需要安装 CH375 驱动。</p>")
-                    .arg(QApplication::applicationVersion()));
+    box.setText(
+        tr("<h3>CH32H417 Logic Analyzer<br>Firmware Upgrade Tool</h3>"
+           "<p>Version: %1</p>"
+           "<p><b>WeAct Studio</b><br>"
+           "Copyright (C) 2026 WeAct Studio. All rights reserved.</p>"
+           "<p>This program is free software: you can redistribute it and/or modify it "
+           "under the terms of the GNU General Public License as published by the Free "
+           "Software Foundation, either version 3 of the License, or (at your option) "
+           "any later version. It is distributed in the hope that it will be useful, but "
+           "WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY "
+           "or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for "
+           "more details.</p>"
+           "<p>License: GPL-3.0-or-later<br>"
+           "<a href='https://www.gnu.org/licenses/gpl-3.0.html'>"
+           "https://www.gnu.org/licenses/gpl-3.0.html</a></p>"
+           "<p>Built with Qt %2, statically compiled with MSYS2 (MINGW64).</p>"
+           "<p>Upgrade sequence: the enter-IAP command is sent over the CH375 "
+           "channel, the device resets into a HID IAP device, then erase / "
+           "program / verify / finish.</p>"
+           "<p>The CH375 driver must be installed.</p>")
+            .arg(QApplication::applicationVersion())
+            .arg(QString::fromLatin1(qVersion())));
+    box.setTextFormat(Qt::RichText);
     box.setStandardButtons(QMessageBox::Ok);
     box.exec();
 }
 
 /* ==========================================================================
- * 拖放 / 关闭
+ * Drag and drop / closing
  * ========================================================================== */
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -1076,8 +1077,9 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (upgrading_) {
         const int ret = QMessageBox::warning(
-            this, tr("正在升级"),
-            tr("升级正在进行中，现在退出可能导致设备固件损坏。\n确定要退出吗？"),
+            this, tr("Upgrade in Progress"),
+            tr("An upgrade is running; exiting now may corrupt the device firmware.\n"
+               "Are you sure you want to exit?"),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (ret != QMessageBox::Yes) {
             event->ignore();
