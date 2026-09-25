@@ -186,9 +186,10 @@ private:
 
     /* State */
     QList<Ch375DeviceInfo> devices_;
-    int appDeviceIndex_;
+    int appDeviceIndex_;                /* CH375 index, -1 when the board was found on another channel */
+    Ch375DeviceInfo appDevice_;         /* The application mode device, on whichever channel */
     DeviceMode deviceMode_;
-    int versionQueriedIndex_;   /* Device index whose version was already queried */
+    QString versionQueriedKey_;         /* Channel + index whose version was already queried */
 
     /* Raw state kept so dynamic texts can be rebuilt */
     QString deviceDetectError_;

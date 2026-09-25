@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 
 #include "ch375_wrapper.h"
+#include "libusbdev.h"
 #include <hidapi.h>
 
 #include <cstring>
@@ -66,6 +67,24 @@ QString extractUsbSerial(const char *devicePath)
 
 } // namespace
 
+namespace {
+
+/*
+ * Message shown when a board that is visible on the bus is held by another
+ * program (the logic analyzer software, for example), so the upgrade tool
+ * cannot open it.
+ */
+QString busyDeviceError()
+{
+    return QCoreApplication::translate(
+        "Ch375Dev",
+        "The device is in use by another program.\n"
+        "Close the program that currently uses the board "
+        "(for example the logic analyzer software) and refresh.");
+}
+
+} // namespace
+
 bool ch375dev_is_iap_id(quint16 vid, quint16 pid)
 {
     return vid == CH32H417_IAP_VID && pid == CH32H417_IAP_PID;
@@ -116,6 +135,7 @@ QList<Ch375DeviceInfo> ch375dev_enum_devices(quint16 matchVid, quint16 matchPid,
         if (vidOk && pidOk) {
             Ch375DeviceInfo info;
             info.index = static_cast<int>(i);
+            info.channel = DeviceChannel::Ch375;
             info.vid = vid;
             info.pid = pid;
             info.isIap = ch375dev_is_iap_id(vid, pid);
@@ -154,6 +174,7 @@ QList<Ch375DeviceInfo> ch375dev_enum_hid_devices(quint16 matchVid, quint16 match
     for (hid_device_info *cur = devs; cur; cur = cur->next) {
         Ch375DeviceInfo info;
         info.index = -1;            /* HID devices have no CH375 index */
+        info.channel = DeviceChannel::Hid;
         info.isIap = true;
         info.vid = cur->vendor_id;
         info.pid = cur->product_id;
@@ -292,34 +313,86 @@ bool ch375dev_hid_present(quint16 vid, quint16 pid)
     return true;
 }
 
+bool ch375dev_get_version_for(const Ch375DeviceInfo &device, quint8 &swVer,
+                              quint8 &hwVer, QString &errorMessage)
+{
+    if (device.busy) {
+        swVer = 0;
+        hwVer = 0;
+        errorMessage = busyDeviceError();
+        return false;
+    }
+
+    if (device.viaLibusb())
+        return libusbdev_get_version(device.bus, device.address, swVer, hwVer, errorMessage);
+
+    return ch375dev_get_version(device.index, swVer, hwVer, errorMessage);
+}
+
+bool ch375dev_enter_iap_for(const Ch375DeviceInfo &device, QString &errorMessage)
+{
+    if (device.busy) {
+        errorMessage = busyDeviceError();
+        return false;
+    }
+
+    if (device.viaLibusb())
+        return libusbdev_enter_iap(device.bus, device.address, errorMessage);
+
+    return ch375dev_enter_iap(device.index, errorMessage);
+}
+
 DeviceMode ch375dev_detect(quint16 appVid, quint16 appPid,
                            quint16 iapVid, quint16 iapPid,
                            int &appIndex,
+                           Ch375DeviceInfo &appDevice,
                            QList<Ch375DeviceInfo> &deviceList,
                            QString &errorMessage)
 {
     appIndex = -1;
+    appDevice = Ch375DeviceInfo();
     deviceList.clear();
 
-    if (!ch375dev_init(errorMessage))
-        return DeviceMode::NotFound;
-
-    deviceList = ch375dev_enum_devices(appVid, appPid, errorMessage);
+    /*
+     * Every channel is scanned. A board is claimed by a single driver at a
+     * time, so at most one channel reports it, and a missing CH375 driver must
+     * not hide a board that libusb can reach.
+     */
+    QString ch375Error;
+    if (ch375dev_init(ch375Error))
+        deviceList += ch375dev_enum_devices(appVid, appPid, ch375Error);
 
     /* Devices already in IAP mode are enumerated over HID and added to the same
      * list, so the user can always see that the device is online. */
     deviceList += ch375dev_enum_hid_devices(iapVid, iapPid);
 
-    if (!deviceList.isEmpty()) {
-        /* Prefer an application mode (CH375) device for version query / IAP switch */
-        for (const Ch375DeviceInfo &info : deviceList) {
-            if (!info.isIap) {
-                appIndex = info.index;
-                return DeviceMode::AppRunning;
-            }
+    /* Boards bound to a generic USB driver (WinUSB) are reached through libusb */
+    QString libusbError;
+    deviceList += libusbdev_enum_devices(appVid, appPid, libusbError);
+
+    /* Prefer an application mode device for the version query / IAP switch.
+     * Busy devices (held by another program) are listed but never selected. */
+    for (const Ch375DeviceInfo &info : deviceList) {
+        if (!info.isIap && !info.busy) {
+            appDevice = info;
+            appIndex = (info.channel == DeviceChannel::Ch375) ? info.index : -1;
+            return DeviceMode::AppRunning;
         }
-        return DeviceMode::IapBootloader;
     }
+
+    if (!deviceList.isEmpty()) {
+        /* IAP (HID) devices are never busy; busy devices only appear on the
+         * libusb channel, so "everything busy" means no usable device. */
+        for (const Ch375DeviceInfo &info : deviceList) {
+            if (!info.busy)
+                return DeviceMode::IapBootloader;
+        }
+        return DeviceMode::DeviceBusy;
+    }
+
+    errorMessage = ch375Error;
+    if (errorMessage.isEmpty())
+        errorMessage = libusbError;
 
     return DeviceMode::NotFound;
 }

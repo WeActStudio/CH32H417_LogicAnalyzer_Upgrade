@@ -19,6 +19,7 @@
 
 #include "mainwindow.h"
 #include "cli.h"
+#include "libusbdev.h"
 #include "languagemanager.h"
 #include "thememanager.h"
 
@@ -32,17 +33,35 @@ int main(int argc, char *argv[])
     QApplication::setOrganizationName("WeActStudio");
 
     /*
-     * Headless mode: --firmware / --list / --help / --version run the upgrade
-     * without a window and return a process exit code. The same mode is used
-     * when the program is started from a command prompt, where a window is not
-     * what the user expects. No translator is installed on this path.
+     * Headless mode: any argument on the command line runs the upgrade without
+     * a window and returns a process exit code; without arguments the graphical
+     * interface starts. The switches of the graphical interface itself
+     * (--lang / --theme / --screenshot / --autoswitch / --about) always keep it.
+     * No translator is installed on the command line path.
      */
     QStringList args;
     for (int i = 1; i < argc; ++i)
         args << QString::fromLocal8Bit(argv[i]);
 
-    if (cliRequested(args))
+    /*
+     * Headless mode: any argument on the command line runs the upgrade without
+     * a window and returns a process exit code; without arguments the graphical
+     * interface starts. The switches of the graphical interface itself
+     * (--lang / --theme / --screenshot / --autoswitch / --about) always keep it.
+     * No translator is installed on the command line path.
+     *
+     * The work is handed over to the console companion as soon as it is
+     * installed next to this program: PowerShell does not wait for a Windows
+     * GUI application, but it does wait for that one, and only it can be
+     * redirected by another program without any console trickery.
+     */
+    if (cliRequested(args)) {
+        const int forwarded = cliForwardToConsoleApp(args);
+        if (forwarded >= 0)
+            return forwarded;
+
         return cliRun(args);
+    }
 
     /* Application icon: logo.ico is embedded in the executable, setting it here
      * as well makes sure the title bar, the task bar and the About dialog all
@@ -173,5 +192,10 @@ int main(int argc, char *argv[])
         break;
     }
 
-    return app.exec();
+    const int code = app.exec();
+
+    /* Close the libusb session before the process ends */
+    libusbdev_cleanup();
+
+    return code;
 }

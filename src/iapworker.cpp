@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 #include "firmwareimage.h"
 #include "ch375dev.h"
+#include "libusbdev.h"
 
 #include <hidapi.h>
 
@@ -206,20 +207,44 @@ bool IapWorker::enterIapMode()
         return false;
     }
 
+    if (config_.deviceBusy) {
+        log(tr("The device is in use by another program.\n"
+               "Close the program that currently uses the board "
+               "(for example the logic analyzer software) and refresh."));
+        return false;
+    }
+
     if (config_.alreadyInIap) {
         log(tr("Device is already in IAP mode, skipping the mode switch"));
         return true;
     }
 
-    if (config_.ch375Index < 0) {
+    /*
+     * A CH375 index is only required for the CH375 channel; a libusb upgrade
+     * addresses the board by bus/address instead (ch375Index is -1 there).
+     */
+    if (!config_.viaLibusb && config_.ch375Index < 0) {
         log(tr("No usable CH375 device index, cannot send the switch command"));
         return false;
     }
 
-    log(tr("Sending enter-IAP-mode command to device (CH375 index %1) ...").arg(config_.ch375Index));
+    /*
+     * The board sits in application mode on one of two channels: the CH375
+     * driver, or a generic USB driver (WinUSB) reached through libusb. Both
+     * carry the same command, only the transport differs.
+     */
+    if (config_.viaLibusb) {
+        log(tr("Sending enter-IAP-mode command over libusb (bus %1, address %2) ...")
+                .arg(config_.libusbBus).arg(config_.libusbAddress));
+    } else {
+        log(tr("Sending enter-IAP-mode command to device (CH375 index %1) ...").arg(config_.ch375Index));
+    }
 
     QString error;
-    if (!ch375dev_enter_iap(config_.ch375Index, error)) {
+    const bool sent = config_.viaLibusb
+                          ? libusbdev_enter_iap(config_.libusbBus, config_.libusbAddress, error)
+                          : ch375dev_enter_iap(config_.ch375Index, error);
+    if (!sent) {
         log(tr("Failed to enter IAP mode: %1").arg(error));
         return false;
     }
@@ -278,7 +303,7 @@ bool IapWorker::eraseFlash(quint32 startAddr)
 bool IapWorker::programFlash(const quint8 *data, int len)
 {
     log(tr("Programming FLASH, %1 bytes in total").arg(len));
-    updateProgress(25, tr("Programming FLASH ..."));
+    updateProgress(25, tr("Programming FLASH ... %1%").arg(0));
 
     int offset = 0;
     int retryCount = 0;
@@ -327,7 +352,13 @@ bool IapWorker::programFlash(const quint8 *data, int len)
         offset += chunkSize;
 
         const int percent = 25 + static_cast<int>(45LL * offset / len);
-        updateProgress(percent, tr("Programming FLASH ... %1%").arg(offset * 100 / len));
+
+        /*
+         * The text is rounded down to a multiple of 10% so that a block of a
+         * few dozen bytes does not produce a new line (or a new label) on its
+         * own; the progress bar still uses the exact value above.
+         */
+        updateProgress(percent, tr("Programming FLASH ... %1%").arg(offset * 10 / len * 10));
     }
 
     /* A zero length packet tells the firmware that all data has been sent */
@@ -344,7 +375,7 @@ bool IapWorker::programFlash(const quint8 *data, int len)
 bool IapWorker::verifyFlash(quint32 startAddr, const quint8 *data, int len)
 {
     log(tr("Verifying FLASH ..."));
-    updateProgress(70, tr("Verifying FLASH ..."));
+    updateProgress(70, tr("Verifying FLASH ... %1%").arg(0));
 
     int offset = 0;
     quint32 verifyAddr = startAddr;
@@ -401,7 +432,9 @@ bool IapWorker::verifyFlash(quint32 startAddr, const quint8 *data, int len)
         verifyAddr += static_cast<quint32>(chunkSize);
 
         const int percent = 70 + static_cast<int>(25LL * offset / len);
-        updateProgress(percent, tr("Verifying FLASH ... %1%").arg(offset * 100 / len));
+
+        /* Rounded down to a multiple of 10%, see programFlash() */
+        updateProgress(percent, tr("Verifying FLASH ... %1%").arg(offset * 10 / len * 10));
     }
 
     log(tr("Verification succeeded"));

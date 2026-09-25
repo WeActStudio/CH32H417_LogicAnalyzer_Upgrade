@@ -56,6 +56,10 @@ public:
         quint16 iapVid = 0x1A86;                /* VID in IAP mode */
         quint16 iapPid = 0xFE17;                /* PID in IAP mode */
         int ch375Index = -1;                    /* CH375 index in application mode, -1 goes straight to HID */
+        bool viaLibusb = false;                 /* Application mode device reached through libusb / WinUSB */
+        int libusbBus = 0;                      /* USB bus of the libusb device */
+        int libusbAddress = 0;                  /* USB address of the libusb device */
+        bool deviceBusy = false;                /* Device is held by another program, refuse to upgrade */
         bool alreadyInIap = false;              /* Device is already in IAP/HID mode */
         int hidWaitSeconds = 10;                /* Seconds to wait for the HID device to appear */
     };

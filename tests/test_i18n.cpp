@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     CHECK(T("MainWindow", "IAP Parameters") == "IAP Parameters", "IAP Parameters stays English");
     CHECK(T("MainWindow", "Ready") == "Ready", "Ready stays English");
     CHECK(T("MainWindow", "Start Upgrade(&S)") == "Start Upgrade(&S)", "Start Upgrade stays English");
-    CHECK(T("IapWorker", "Programming FLASH ...") == "Programming FLASH ...",
+    CHECK(T("IapWorker", "Programming FLASH ... %1%").arg(50) == "Programming FLASH ... 50%",
           "IAP progress text stays English");
     CHECK(T("LanguageManager", "Simplified Chinese") == "Simplified Chinese",
           "language name stays English");
@@ -67,8 +67,9 @@ int main(int argc, char *argv[])
     CHECK(T("MainWindow", "Device") == QString::fromUtf8("设备"), "Device -> 设备");
     CHECK(T("MainWindow", "Firmware File") == QString::fromUtf8("固件文件"), "Firmware File -> 固件文件");
     CHECK(T("MainWindow", "Ready") == QString::fromUtf8("就绪"), "Ready -> 就绪");
-    CHECK(T("IapWorker", "Programming FLASH ...") == QString::fromUtf8("编程 FLASH ..."),
-          "Programming FLASH ... -> 编程 FLASH ...");
+    CHECK(T("IapWorker", "Programming FLASH ... %1%").arg(50)
+              == QString::fromUtf8("编程 FLASH ... 50%"),
+          "Programming FLASH ... %1% -> 编程 FLASH ... 50%");
 
     /* ---------- 3. Follow the system ---------- */
     std::printf("== Auto ==\n");

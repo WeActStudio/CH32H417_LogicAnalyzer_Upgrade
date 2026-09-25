@@ -38,16 +38,38 @@
 #define CH32H417_SN_PREFIX_V1   "01"
 
 /**
- * A single device reachable over the CH375 / HID channel.
+ * Channel a device was found on. A board instance is claimed by a single
+ * driver at a time, so it is reachable on exactly one of these:
+ *
+ *   Ch375  - CH375DLL.DLL / CH375WDM.sys (application mode)
+ *   Libusb - generic USB driver (WinUSB on Windows), application mode
+ *   Hid    - the IAP bootloader, seen by hidapi after the mode switch
+ *
+ * The USB protocol is identical on all of them, only the transport differs.
+ */
+enum class DeviceChannel
+{
+    Ch375,
+    Libusb,
+    Hid
+};
+
+/**
+ * A single device reachable over the CH375 / libusb / HID channel.
  */
 struct Ch375DeviceInfo
 {
-    int index = -1;         /* CH375 device index 0..15; -1 for HID (IAP) devices */
+    int index = -1;         /* Index inside its own channel; -1 for HID (IAP) devices */
+    DeviceChannel channel = DeviceChannel::Ch375;
+    int bus = 0;            /* USB bus number (libusb channel), 0 when unknown */
+    int address = 0;        /* USB device address (libusb channel), 0 when unknown */
     quint16 vid = 0;
     quint16 pid = 0;
     QString name;           /* Device path/name reported by the driver, may be empty */
     QString serial;         /* USB serial number (lower case), parsed from the device path */
-    bool isIap = false;     /* true = IAP upgrade mode (HID), false = application mode (CH375) */
+    bool isIap = false;     /* true = IAP upgrade mode (HID), false = application mode */
+    bool busy = false;      /* true = the board matches the USB IDs but is held by
+                             * another program / driver, so it cannot be opened */
 
     QString idString() const
     {
@@ -66,15 +88,40 @@ struct Ch375DeviceInfo
         return QStringLiteral("CH32H417");
     }
 
+    /** True when the device is reached through libusb / WinUSB */
+    bool viaLibusb() const { return channel == DeviceChannel::Libusb; }
+
+    /** Channel name shown in the logs and in the device list */
+    QString channelName() const
+    {
+        switch (channel) {
+        case DeviceChannel::Libusb:
+            return QStringLiteral("libusb");
+        case DeviceChannel::Hid:
+            return QStringLiteral("HID");
+        case DeviceChannel::Ch375:
+        default:
+            return QStringLiteral("CH375");
+        }
+    }
+
     /** Full description used in the device list (moved into a tooltip when clipped) */
     QString description() const
     {
-        /* Application mode shows the CH375 index; IAP mode has none, use a channel tag */
+        /*
+         * Application mode shows the index inside its channel; IAP mode has
+         * none, so it gets a channel tag instead.
+         */
         const QString tag = isIap ? QStringLiteral("IAP")
-                                  : QStringLiteral("#%1").arg(index);
+                                  : (viaLibusb() ? QStringLiteral("USB#%1").arg(index)
+                                                 : QStringLiteral("#%1").arg(index));
         QString text = QString("%1  %2  %3").arg(tag).arg(idString()).arg(modelName());
         if (!serial.isEmpty())
             text += QStringLiteral("  SN:%1").arg(serial);
+        if (!isIap)
+            text += QStringLiteral("  (%1)").arg(channelName());
+        if (busy)
+            text += QStringLiteral("  [in use]");
         return text;
     }
 };
@@ -86,7 +133,8 @@ enum class DeviceMode
 {
     NotFound,       /* No device found */
     AppRunning,     /* Application running (visible on the CH375 channel) */
-    IapBootloader   /* Already in IAP / HID mode */
+    IapBootloader,  /* Already in IAP / HID mode */
+    DeviceBusy      /* Board visible on the bus but held by another program */
 };
 
 /**
@@ -141,13 +189,36 @@ bool ch375dev_enter_iap(int index, QString &errorMessage);
 bool ch375dev_hid_present(quint16 vid, quint16 pid);
 
 /**
+ * Read the firmware version of a device, whichever channel it was found on.
+ * Wrapper around ch375dev_get_version() / libusbdev_get_version().
+ */
+bool ch375dev_get_version_for(const Ch375DeviceInfo &device, quint8 &swVer,
+                              quint8 &hwVer, QString &errorMessage);
+
+/**
+ * Send the "enter IAP mode" command to a device, whichever channel it was
+ * found on. Wrapper around ch375dev_enter_iap() / libusbdev_enter_iap().
+ */
+bool ch375dev_enter_iap_for(const Ch375DeviceInfo &device, QString &errorMessage);
+
+/**
  * Determine the current mode of the device.
- * @param appIndex   Output: CH375 device index in application mode, -1 if not found
+ *
+ * All channels are scanned: the CH375 channel, the HID channel (boards that
+ * already sit in the bootloader) and the libusb channel (boards bound to a
+ * generic USB driver such as WinUSB). A missing CH375 driver is not an error
+ * any more as long as another channel can see the board.
+ *
+ * @param appIndex   Output: CH375 index in application mode, -1 if not found
+ *                   or if the board was found on another channel
+ * @param appDevice  Output: the first application mode device found, on
+ *                   whichever channel; invalid when nothing was found
  * @param deviceList Output: all enumerated CH32H417 devices
  */
 DeviceMode ch375dev_detect(quint16 appVid, quint16 appPid,
                            quint16 iapVid, quint16 iapPid,
                            int &appIndex,
+                           Ch375DeviceInfo &appDevice,
                            QList<Ch375DeviceInfo> &deviceList,
                            QString &errorMessage);
 

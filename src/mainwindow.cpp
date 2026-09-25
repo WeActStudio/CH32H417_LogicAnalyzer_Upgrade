@@ -78,7 +78,20 @@ QString elideMiddle(const QString &text, int maxChars)
  */
 QString deviceListLabel(const Ch375DeviceInfo &info)
 {
-    return elideMiddle(info.modelName(), kDeviceLabelMaxChars);
+    QString label = elideMiddle(info.modelName(), kDeviceLabelMaxChars);
+    if (info.busy)
+        label += MainWindow::tr(" (in use)");
+    return label;
+}
+
+/*
+ * Identity of a board across refreshes: the channel and the index inside it.
+ * The same board reached over libusb and over CH375 are two different keys,
+ * which is what they are — only one of the two can claim the device.
+ */
+QString deviceKey(const Ch375DeviceInfo &info)
+{
+    return QStringLiteral("%1#%2").arg(info.channelName()).arg(info.index);
 }
 
 MainWindow *g_mainWindow = nullptr;
@@ -151,7 +164,7 @@ MainWindow::MainWindow(QWidget *parent)
     , upgrading_(false)
     , appDeviceIndex_(-1)
     , deviceMode_(DeviceMode::NotFound)
-    , versionQueriedIndex_(-2)
+    , versionQueriedKey_()
     , versionValid_(false)
     , swVersion_(0)
     , hwVersion_(0)
@@ -602,7 +615,7 @@ void MainWindow::refreshDeviceList()
     QString error;
     const DeviceMode mode = ch375dev_detect(CH32H417_APP_VID, CH32H417_APP_PID,
                                             iapVid(), iapPid(),
-                                            appDeviceIndex_, devices_, error);
+                                            appDeviceIndex_, appDevice_, devices_, error);
     deviceMode_ = mode;
     deviceDetectError_ = error;
 
@@ -637,29 +650,34 @@ void MainWindow::refreshDeviceList()
     deviceCombo_->blockSignals(false);
 
     switch (mode) {
-    case DeviceMode::AppRunning:
+    case DeviceMode::AppRunning: {
         /*
          * Re-read the version only when the device changed or when the previous
-         * read failed. Unplugging and plugging back in keeps the same index, so
-         * a pure "index changed" test would never re-read and the UI would stay
+         * read failed. Unplugging and plugging back in keeps the same key, so a
+         * pure "index changed" test would never re-read and the UI would stay
          * at "read failed"; a failure must therefore allow a retry next time.
+         * The key covers the channel as well, so a board that changes from the
+         * CH375 driver to WinUSB is queried again.
          */
-        if (appDeviceIndex_ != versionQueriedIndex_ || !versionValid_) {
-            versionValid_ = ch375dev_get_version(appDeviceIndex_, swVersion_, hwVersion_, error);
+        const QString key = deviceKey(appDevice_);
+        if (key != versionQueriedKey_ || !versionValid_) {
+            versionValid_ = ch375dev_get_version_for(appDevice_, swVersion_, hwVersion_, error);
             if (versionValid_) {
-                versionQueriedIndex_ = appDeviceIndex_;
+                versionQueriedKey_ = key;
                 deviceDetectError_.clear();
             } else {
-                versionQueriedIndex_ = -2;      /* keep retrying on the next refresh */
+                versionQueriedKey_.clear();      /* keep retrying on the next refresh */
                 deviceDetectError_ = error;
             }
         }
         break;
+    }
 
     case DeviceMode::IapBootloader:
+    case DeviceMode::DeviceBusy:
     default:
         versionValid_ = false;
-        versionQueriedIndex_ = -2;              /* not in application mode, re-read when it reconnects */
+        versionQueriedKey_.clear();             /* not in application mode, re-read when it reconnects */
         break;
     }
 
@@ -686,8 +704,15 @@ void MainWindow::updateDeviceStatusText()
 {
     switch (deviceMode_) {
     case DeviceMode::AppRunning:
+        /*
+         * Two channels can reach a board in application mode: the CH375 driver
+         * and a generic USB driver (libusb). Naming the channel here tells the
+         * user why a board bound to WinUSB is still upgradeable.
+         */
         deviceStatusLabel_->setText(
-            tr("<font color='%1'>Connected (application mode, CH375 channel)</font>").arg(statusColor(0)));
+            tr("<font color='%1'>Connected (application mode, %2 channel)</font>")
+                .arg(statusColor(0))
+                .arg(appDevice_.channelName()));
         /* Only the numeric version is shown, e.g. v1.1 */
         deviceVersionLabel_->setText(
             versionValid_
@@ -704,6 +729,13 @@ void MainWindow::updateDeviceStatusText()
             tr("<font color='%1'>Connected (IAP upgrade mode)</font>").arg(statusColor(1)));
         deviceVersionLabel_->setText(tr("-"));
         deviceVersionLabel_->setToolTip(QString());
+        break;
+
+    case DeviceMode::DeviceBusy:
+        deviceStatusLabel_->setText(
+            tr("<font color='%1'>Device in use by another program</font>").arg(statusColor(1)));
+        deviceVersionLabel_->setText(tr("-"));
+        deviceVersionLabel_->setToolTip(deviceDetectError_);
         break;
 
     default:
@@ -734,6 +766,7 @@ void MainWindow::onDeviceIndexChanged(int index)
         return;
 
     appDeviceIndex_ = devices_.at(index).index;
+    appDevice_ = devices_.at(index);
     deviceCombo_->setToolTip(devices_.at(index).description());
 
     /* Re-evaluate the V2 lock (BIN base address + IAP VID/PID) after a switch */
@@ -742,16 +775,16 @@ void MainWindow::onDeviceIndexChanged(int index)
     if (devices_.at(index).isIap) {
         /* The firmware version cannot be queried in IAP mode */
         versionValid_ = false;
-        versionQueriedIndex_ = -2;
+        versionQueriedKey_.clear();
         updateDeviceStatusText();
         return;
     }
 
     quint8 swVer = 0, hwVer = 0;
     QString error;
-    if (ch375dev_get_version(appDeviceIndex_, swVer, hwVer, error)) {
+    if (ch375dev_get_version_for(devices_.at(index), swVer, hwVer, error)) {
         versionValid_ = true;
-        versionQueriedIndex_ = appDeviceIndex_;
+        versionQueriedKey_ = deviceKey(devices_.at(index));
         swVersion_ = swVer;
         hwVersion_ = hwVer;
         updateDeviceStatusText();
@@ -871,6 +904,10 @@ void MainWindow::onStartUpgrade()
     config.iapPid = iapPid();
     config.alreadyInIap = (deviceMode_ == DeviceMode::IapBootloader);
     config.ch375Index = (deviceMode_ == DeviceMode::AppRunning) ? appDeviceIndex_ : -1;
+    config.viaLibusb = (deviceMode_ == DeviceMode::AppRunning) && appDevice_.viaLibusb();
+    config.libusbBus = appDevice_.bus;
+    config.libusbAddress = appDevice_.address;
+    config.deviceBusy = (deviceMode_ == DeviceMode::DeviceBusy) || appDevice_.busy;
     config.hidWaitSeconds = 15;
 
     logView_->clear();
@@ -879,11 +916,16 @@ void MainWindow::onStartUpgrade()
     progressLabel_->setText(tr("Preparing ..."));
     setBusy(true);
 
-    appendLog(tr("Target device: %1").arg(deviceMode_ == DeviceMode::AppRunning
-                                    ? QString("CH375 #%1").arg(appDeviceIndex_)
-                                    : QString("IAP HID (VID:0x%1 PID:0x%2)")
-                                          .arg(config.iapVid, 4, 16, QChar('0'))
-                                          .arg(config.iapPid, 4, 16, QChar('0'))));
+    if (deviceMode_ == DeviceMode::IapBootloader) {
+        appendLog(tr("Target device: IAP HID (VID:0x%1 PID:0x%2)")
+                      .arg(config.iapVid, 4, 16, QChar('0'))
+                      .arg(config.iapPid, 4, 16, QChar('0')));
+    } else if (config.viaLibusb) {
+        appendLog(tr("Target device: libusb (bus %1, address %2)")
+                      .arg(config.libusbBus).arg(config.libusbAddress));
+    } else {
+        appendLog(tr("Target device: CH375 #%1").arg(appDeviceIndex_));
+    }
 
     worker_ = new IapWorker(config);
     workerThread_ = new QThread(this);

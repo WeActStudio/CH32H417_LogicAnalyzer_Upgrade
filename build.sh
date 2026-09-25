@@ -31,7 +31,15 @@ PRO_FILE="CH32H417_LogicAnalyzer_Upgrade.pro"
 # Name of the produced executable (matches TARGET in the .pro, contains spaces)
 EXE_NAME="CH32H417 Logic Analyzer Upgrade.exe"
 
+# Console companion: the same command line code built as a Windows console
+# application. cmd / PowerShell wait for it, other programs can redirect its
+# output and the shell prints its own prompt when it is done - none of which
+# works with the graphical (Windows GUI subsystem) executable.
+CLI_PRO_FILE="CH32H417_LogicAnalyzer_Upgrade_CLI.pro"
+CLI_EXE_NAME="CH32H417 Logic Analyzer Upgrade CLI.exe"
+
 BUILD_DIR="${SCRIPT_DIR}/build"
+CLI_BUILD_DIR="${SCRIPT_DIR}/build-cli"
 
 # qmake of the MSYS2 static Qt installation.
 #
@@ -139,8 +147,8 @@ purge_if_qt_changed()
 }
 
 if [ "$1" = "clean" ]; then
-    echo "==> Cleaning ${BUILD_DIR} ${SCRIPT_DIR}/tests/build ${SCRIPT_DIR}/build-map"
-    rm -rf "${BUILD_DIR}" "${SCRIPT_DIR}/tests/build" "${SCRIPT_DIR}/build-map" 2>/dev/null || true
+    echo "==> Cleaning ${BUILD_DIR} ${CLI_BUILD_DIR} ${SCRIPT_DIR}/tests/build ${SCRIPT_DIR}/build-map"
+    rm -rf "${BUILD_DIR}" "${CLI_BUILD_DIR}" "${SCRIPT_DIR}/tests/build" "${SCRIPT_DIR}/build-map" 2>/dev/null || true
     exit 0
 fi
 
@@ -155,6 +163,7 @@ fi
 # ----------------------------------------------------------------------------
 if [ "$1" = "pack" ]; then
     EXE_PATH="${BUILD_DIR}/${EXE_NAME}"
+    CLI_PATH="${BUILD_DIR}/${CLI_EXE_NAME}"
     if [ ! -f "${EXE_PATH}" ]; then
         echo "Error: ${EXE_PATH} not found, run ./build.sh first" >&2
         exit 1
@@ -166,6 +175,10 @@ if [ "$1" = "pack" ]; then
     echo "==> Compressing with UPX ..."
     upx --best --lzma "${EXE_PATH}"
     echo "    size: $(du -h "${EXE_PATH}" | cut -f1)"
+    if [ -f "${CLI_PATH}" ]; then
+        upx --best --lzma "${CLI_PATH}"
+        echo "    size: $(du -h "${CLI_PATH}" | cut -f1)"
+    fi
     exit 0
 fi
 
@@ -246,8 +259,38 @@ fi
 cp -f "${SCRIPT_DIR}/CH375DLL.dll"    "$(dirname "${EXE_PATH}")/" 2>/dev/null || true
 cp -f "${SCRIPT_DIR}/CH375DLL64.dll"  "$(dirname "${EXE_PATH}")/" 2>/dev/null || true
 
+# ----------------------------------------------------------------------------
+#  The console companion, into the same directory: the graphical program looks
+#  for it next to itself and hands its command line over to it.
+# ----------------------------------------------------------------------------
+echo
+echo "==> Building the console companion (${CLI_EXE_NAME}) ..."
+
+purge_if_qt_changed "${CLI_BUILD_DIR}"
+cd "${CLI_BUILD_DIR}"
+
+"${QMAKE_BIN}" "${SCRIPT_DIR_WIN}/${CLI_PRO_FILE}"
+make -j"${JOBS}"
+
+CLI_PATH=""
+for candidate in "${CLI_BUILD_DIR}/${CLI_EXE_NAME}" "${CLI_BUILD_DIR}/release/${CLI_EXE_NAME}"; do
+    if [ -f "${candidate}" ]; then
+        CLI_PATH="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${CLI_PATH}" ]; then
+    echo "Error: the console companion was not produced" >&2
+    exit 1
+fi
+
+cp -f "${CLI_PATH}" "${BUILD_DIR}/${CLI_EXE_NAME}"
+
 echo
 echo "==> Build succeeded"
 echo "    program: ${EXE_PATH}"
 echo "    size:    $(du -h "${EXE_PATH}" | cut -f1)"
+echo "    console: ${BUILD_DIR}/${CLI_EXE_NAME}"
+echo "    size:    $(du -h "${BUILD_DIR}/${CLI_EXE_NAME}" | cut -f1)"
 ls -1 "$(dirname "${EXE_PATH}")"

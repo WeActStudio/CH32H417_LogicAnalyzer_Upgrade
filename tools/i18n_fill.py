@@ -26,6 +26,30 @@ ZH = {
     "Failed to read firmware version (device did not respond)": "读取固件版本失败（设备无响应）",
     "Unexpected version response: 0x%1": "版本响应异常：0x%1",
     "Failed to send the enter-IAP-mode command": "发送进入 IAP 模式命令失败",
+    "The device is in use by another program.\n"
+    "Close the program that currently uses the board "
+    "(for example the logic analyzer software) and refresh.":
+        "设备正被其他程序占用。\n"
+        "请关闭当前使用该设备的程序（例如逻辑分析仪上位机软件）后刷新重试。",
+
+    # ---------------- LibusbDev ----------------
+    "libusb is not available": "libusb 不可用",
+    "Unable to initialise libusb (error %1)": "libusb 初始化失败（错误 %1）",
+    "Failed to enumerate the USB devices (libusb error %1)": "枚举 USB 设备失败（libusb 错误 %1）",
+    "Cannot open the USB device (libusb error %1). The board must be bound to a "
+    "generic USB driver (WinUSB on Windows) and must not be in use by another "
+    "program.":
+        "无法打开 USB 设备（libusb 错误 %1）。设备需要绑定通用 USB 驱动"
+        "（Windows 上为 WinUSB），且不能被其他程序占用。",
+    "Cannot claim the USB interface (libusb error %1). Close other programs that "
+    "use the device and try again.":
+        "无法占用 USB 接口（libusb 错误 %1）。请关闭使用该设备的其他程序后重试。",
+    "Failed to send command 0x%1 (libusb error %2)": "发送命令 0x%1 失败（libusb 错误 %2）",
+    "The device did not answer command 0x%1 (libusb error %2)":
+        "设备未应答命令 0x%1（libusb 错误 %2）",
+    "The device is no longer present (bus %1, address %2)":
+        "设备已不存在（总线 %1，地址 %2）",
+    " (in use)": "（被占用）",
 
     # ---------------- ThemeManager / View menu ----------------
     "Follow System(&S)": "跟随系统(&S)",
@@ -63,6 +87,8 @@ ZH = {
         "没有可用的 CH375 设备索引，无法发送切换命令",
     "Sending enter-IAP-mode command to device (CH375 index %1) ...":
         "向设备（CH375 索引 %1）发送进入 IAP 模式命令 ...",
+    "Sending enter-IAP-mode command over libusb (bus %1, address %2) ...":
+        "通过 libusb 发送进入 IAP 模式命令（总线 %1，地址 %2）...",
     "Failed to enter IAP mode: %1": "进入 IAP 模式失败：%1",
     "Command sent, waiting for the device to reset into a HID IAP device ...":
         "命令已发送，等待设备复位并切换为 HID IAP 设备 ...",
@@ -160,6 +186,8 @@ ZH = {
     "Run Mode": "运行模式",
     "<font color='%1'>Connected (application mode, CH375 channel)</font>":
         "<font color='%1'>已连接（运行模式，CH375 通道）</font>",
+    "<font color='%1'>Connected (application mode, %2 channel)</font>":
+        "<font color='%1'>已连接（运行模式，%2 通道）</font>",
     "Software version: v%1  Hardware version: v%2": "软件版本：v%1　硬件版本：v%2",
     "Read failed": "读取失败",
     "<font color='%1'>Connected (IAP upgrade mode)</font>":
@@ -168,6 +196,8 @@ ZH = {
         "<font color='%1'>已连接（IAP 升级模式，HID 通道）</font>",
     "-": "-",
     "<font color='%1'>No device found</font>": "<font color='%1'>未发现设备</font>",
+    "<font color='%1'>Device in use by another program</font>":
+        "<font color='%1'>设备正被其他程序占用</font>",
     "Select Firmware File": "选择固件文件",
     "Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)":
         "固件文件 (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;二进制文件 (*.bin);;所有文件 (*.*)",
@@ -188,6 +218,9 @@ ZH = {
     "Firmware Error": "固件错误",
     "Preparing ...": "准备中 ...",
     "Target device: %1": "目标设备：%1",
+    "Target device: CH375 #%1": "目标设备：CH375 #%1",
+    "Target device: libusb (bus %1, address %2)": "目标设备：libusb（总线 %1，地址 %2）",
+    "Target device: IAP HID (VID:0x%1 PID:0x%2)": "目标设备：IAP HID (VID:0x%1 PID:0x%2)",
     "Upgrade Complete": "升级完成",
     "Complete": "完成",
     "Firmware upgrade succeeded!\nThe device will restart and run the new firmware.":

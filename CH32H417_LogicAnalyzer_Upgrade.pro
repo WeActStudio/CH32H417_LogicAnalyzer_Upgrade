@@ -85,6 +85,7 @@ SOURCES += \
     src/thememanager.cpp \
     src/firmwareimage.cpp \
     src/ch375dev.cpp \
+    src/libusbdev.cpp \
     src/ch375_wrapper.c
 
 HEADERS += \
@@ -95,6 +96,7 @@ HEADERS += \
     src/thememanager.h \
     src/firmwareimage.h \
     src/ch375dev.h \
+    src/libusbdev.h \
     src/ch375_wrapper.h
 
 # ----------------------------------------------------------------------------
@@ -103,6 +105,17 @@ HEADERS += \
 INCLUDEPATH += $$MSYS_PREFIX_WIN/include/hidapi
 LIBS += -L$$MSYS_PREFIX_WIN/lib -lhidapi
 LIBS += -lsetupapi -lhid
+
+# ----------------------------------------------------------------------------
+#  libusb (MSYS2 mingw-w64-x86_64-libusb, static library)
+#
+#  Second way to reach a board: the CH375 driver and a generic USB driver
+#  (WinUSB) are mutually exclusive, so both channels are built in and the one
+#  that can open the board is used.
+# ----------------------------------------------------------------------------
+INCLUDEPATH += $$MSYS_PREFIX_WIN/include/libusb-1.0
+LIBS += -L$$MSYS_PREFIX_WIN/lib -lusb-1.0
+LIBS += -lsetupapi
 
 # ----------------------------------------------------------------------------
 #  UI translation (Simplified Chinese)
