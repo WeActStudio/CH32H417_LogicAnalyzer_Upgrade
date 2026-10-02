@@ -91,6 +91,9 @@ QString deviceListLabel(const Ch375DeviceInfo &info)
  */
 QString deviceKey(const Ch375DeviceInfo &info)
 {
+    /* A serial device has no index; its COM port is the unique part */
+    if (info.viaSerial())
+        return QStringLiteral("serial#%1").arg(info.comPort);
     return QStringLiteral("%1#%2").arg(info.channelName()).arg(info.index);
 }
 
@@ -124,7 +127,7 @@ MainWindow::MainWindow(QWidget *parent)
     , fileEdit_(nullptr)
     , browseButton_(nullptr)
     , firmwareInfoLabel_(nullptr)
-    , baseAddressEdit_(nullptr)
+    , baseAddressCombo_(nullptr)
     , baseAddressHintLabel_(nullptr)
     , binBaseAddressLocked_(false)
     , iapVidEdit_(nullptr)
@@ -260,14 +263,18 @@ void MainWindow::setupUi()
     firmwareInfoTitleLabel_ = new QLabel(fwGroup_);
     fwLayout->addRow(firmwareInfoTitleLabel_, firmwareInfoLabel_);
 
-    baseAddressEdit_ = new QLineEdit("08006000", fwGroup_);
-    baseAddressEdit_->setMaximumWidth(120);
+    baseAddressCombo_ = new QComboBox(fwGroup_);
+    baseAddressCombo_->setEditable(true);
+    baseAddressCombo_->setInsertPolicy(QComboBox::NoInsert);
+    baseAddressCombo_->setMaxVisibleItems(8);
+    baseAddressCombo_->setMinimumContentsLength(30);
+    baseAddressCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     baseAddressLabel_ = new QLabel(fwGroup_);
     baseAddressHintLabel_ = new QLabel(fwGroup_);
     baseAddressHintLabel_->setStyleSheet(QStringLiteral("color: gray;"));
 
     QHBoxLayout *baseRow = new QHBoxLayout();
-    baseRow->addWidget(baseAddressEdit_);
+    baseRow->addWidget(baseAddressCombo_);
     baseRow->addWidget(baseAddressHintLabel_);
     baseRow->addStretch(1);
     fwLayout->addRow(baseAddressLabel_, baseRow);
@@ -338,7 +345,18 @@ void MainWindow::setupUi()
     connect(fileEdit_, &QLineEdit::textChanged, this, &MainWindow::onFirmwarePathChanged);
     connect(deviceCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onDeviceIndexChanged);
-
+    /*
+     * The address range shown for a .bin depends on the base address, so
+     * picking another slot (or typing an address) has to redraw it - the
+     * programmed range must never disagree with what is on screen. Typed
+     * text is committed with editingFinished, so this does not re-read the
+     * file on every keypress.
+     */
+    connect(baseAddressCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::updateFirmwareInfo);
+    if (baseAddressCombo_->isEditable() && baseAddressCombo_->lineEdit())
+        connect(baseAddressCombo_->lineEdit(), &QLineEdit::editingFinished,
+                this, &MainWindow::updateFirmwareInfo);
 }
 
 void MainWindow::createMenus()
@@ -428,7 +446,13 @@ void MainWindow::retranslateUi()
     /* Widgets */
     refreshButton_->setText(tr("Refresh(&R)"));
     browseButton_->setText(tr("Browse(&B)..."));
-    baseAddressEdit_->setToolTip(tr("Programming start address for .bin files (hexadecimal, e.g. 08006000)"));
+    /*
+     * The dropdown itself stays plain (slot number and address only); what the
+     * slots are used for belongs into the tooltip, where it costs no width.
+     */
+    baseAddressCombo_->setToolTip(tr("Programming start address for .bin files (hexadecimal, e.g. 08006000). "
+                                      "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
+                                      "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example."));
     fileEdit_->setPlaceholderText(tr("Select or drop a .hex / .bin firmware file"));
 
     logTitleLabel_->setText(tr("Upgrade Log"));
@@ -526,7 +550,12 @@ void MainWindow::loadSettings()
 {
     QSettings settings(kSettingsOrg, kSettingsApp);
     fileEdit_->setText(settings.value("firmwarePath").toString());
-    baseAddressEdit_->setText(settings.value("binBaseAddress", "08006000").toString());
+    const QString baseText = settings.value("binBaseAddress", "08006000").toString();
+    bool baseOk = false;
+    const quint32 baseValue = baseText.toUInt(&baseOk, 16);
+    baseAddressCombo_->setEditText(baseOk
+        ? QString::number(baseValue, 16).rightJustified(8, QLatin1Char('0'))
+        : QStringLiteral("08006000"));
     iapVidEdit_->setText(settings.value("iapVid", "1A86").toString());
     iapPidEdit_->setText(settings.value("iapPid", "FE17").toString());
     restoreGeometry(settings.value("geometry").toByteArray());
@@ -539,7 +568,8 @@ void MainWindow::saveSettings()
 {
     QSettings settings(kSettingsOrg, kSettingsApp);
     settings.setValue("firmwarePath", fileEdit_->text());
-    settings.setValue("binBaseAddress", baseAddressEdit_->text());
+    settings.setValue("binBaseAddress",
+                      QString::number(binBaseAddress(), 16).rightJustified(8, QLatin1Char('0')));
     settings.setValue("iapVid", iapVidEdit_->text());
     settings.setValue("iapPid", iapPidEdit_->text());
     settings.setValue("geometry", saveGeometry());
@@ -565,22 +595,83 @@ quint16 MainWindow::iapPid() const
 
 quint32 MainWindow::binBaseAddress() const
 {
+    /*
+     * A preset slot item carries its address in Qt::UserRole, so picking from
+     * the dropdown needs no parsing. Typed text is plain hexadecimal, with an
+     * optional 0x prefix tolerated.
+     */
+    const QVariant data = baseAddressCombo_->itemData(baseAddressCombo_->currentIndex());
+    if (data.isValid())
+        return static_cast<quint32>(data.toUInt());
+
     bool ok = false;
-    const quint32 value = baseAddressEdit_->text().trimmed().toUInt(&ok, 16);
+    QString text = baseAddressCombo_->currentText().trimmed().toLower();
+    if (text.startsWith(QLatin1String("0x")))
+        text.remove(0, 2);
+    const quint32 value = text.toUInt(&ok, 16);
     return ok ? value : 0x08006000u;
 }
 
 void MainWindow::updateBaseAddressHint()
 {
-    /* V2 devices lock the address and grey out the field, so no extra hint is
-       needed here, only the note about the number base */
+    /* V2 boards show the slot presets in the dropdown; other devices keep the
+       note about the number base */
     baseAddressHintLabel_->setText(tr("Hexadecimal, e.g. 08006000"));
 }
 
 /*
- * On the WeAct Studio Logic Analyzer V2 both the application start address and
- * the IAP VID/PID are fixed. When a V2 board is detected the values are filled
- * in automatically and locked, to keep the user from bricking the device.
+ * Fill the BIN base address dropdown. V2 boards get the three APP slots of
+ * the IAP firmware (see the MCU project: Common/iap.c, IAP_SlotOfBase — the
+ * erase command only accepts exactly these bases). Other devices keep the
+ * plain editable hex input.
+ */
+void MainWindow::updateBaseAddressSlots(bool v2)
+{
+    /* Rebuilding the list is not a user action: without this the periodic
+       device refresh would re-read the firmware file on every tick */
+    const bool blocked = baseAddressCombo_->blockSignals(true);
+
+    if (!v2) {
+        if (baseAddressCombo_->count() == 0) {
+            baseAddressCombo_->blockSignals(blocked);
+            return;                         /* already a plain hex input */
+        }
+
+        /* Drop the presets but keep whatever the user had selected / typed */
+        const QString text = baseAddressCombo_->lineEdit()
+                                 ? baseAddressCombo_->lineEdit()->text()
+                                 : baseAddressCombo_->currentText();
+        baseAddressCombo_->clear();
+        baseAddressCombo_->setEditText(text);
+        baseAddressCombo_->blockSignals(blocked);
+        return;
+    }
+
+    /* Remember the currently selected address so a periodic device refresh
+       does not reset the user's slot choice */
+    const quint32 previous = binBaseAddress();
+
+    baseAddressCombo_->clear();
+    baseAddressCombo_->addItem(tr("Slot 0: 0x08006000"), 0x08006000u);
+    baseAddressCombo_->addItem(tr("Slot 1: 0x08052000"), 0x08052000u);
+    baseAddressCombo_->addItem(tr("Slot 2: 0x0809E000"), 0x0809E000u);
+
+    int select = 0;
+    for (int i = 0; i < baseAddressCombo_->count(); ++i) {
+        if (static_cast<quint32>(baseAddressCombo_->itemData(i).toUInt()) == previous) {
+            select = i;
+            break;
+        }
+    }
+    baseAddressCombo_->setCurrentIndex(select);
+    baseAddressCombo_->blockSignals(blocked);
+}
+
+/*
+ * On the WeAct Studio Logic Analyzer V2 the IAP VID/PID are fixed and the BIN
+ * base address is chosen from the three APP slots. When a V2 board is detected
+ * the values are filled in automatically and the VID/PID locked, to keep the
+ * user from bricking the device.
  */
 void MainWindow::updateV2Lock()
 {
@@ -591,15 +682,17 @@ void MainWindow::updateV2Lock()
 
     binBaseAddressLocked_ = v2;
 
+    updateBaseAddressSlots(v2);
+
     if (v2) {
-        baseAddressEdit_->setText(QStringLiteral("08006000"));
         iapVidEdit_->setText(QStringLiteral("1A86"));
         iapPidEdit_->setText(QStringLiteral("FE17"));
     }
 
-    baseAddressEdit_->setReadOnly(v2);
-    baseAddressEdit_->setEnabled(!v2 && !upgrading_);
-    baseAddressEdit_->setFocusPolicy(v2 ? Qt::NoFocus : Qt::StrongFocus);
+    /* The base address combo stays usable for V2 boards: choosing one of the
+       slot presets is exactly what it is there for. Only the VID/PID fields
+       get locked. */
+    baseAddressCombo_->setEnabled(!upgrading_);
     iapVidEdit_->setReadOnly(v2);
     iapVidEdit_->setEnabled(!v2 && !upgrading_);
     iapVidEdit_->setFocusPolicy(v2 ? Qt::NoFocus : Qt::StrongFocus);
@@ -660,7 +753,13 @@ void MainWindow::refreshDeviceList()
          * CH375 driver to WinUSB is queried again.
          */
         const QString key = deviceKey(appDevice_);
-        if (key != versionQueriedKey_ || !versionValid_) {
+        if (appDevice_.viaSerial()) {
+            /* The USB-to-UART application has no version command on its CDC
+               channels; the version stays unknown without error retries */
+            versionValid_ = false;
+            versionQueriedKey_ = key;
+            deviceDetectError_.clear();
+        } else if (key != versionQueriedKey_ || !versionValid_) {
             versionValid_ = ch375dev_get_version_for(appDevice_, swVersion_, hwVersion_, error);
             if (versionValid_) {
                 versionQueriedKey_ = key;
@@ -713,15 +812,22 @@ void MainWindow::updateDeviceStatusText()
             tr("<font color='%1'>Connected (application mode, %2 channel)</font>")
                 .arg(statusColor(0))
                 .arg(appDevice_.channelName()));
-        /* Only the numeric version is shown, e.g. v1.1 */
-        deviceVersionLabel_->setText(
-            versionValid_
-                ? QStringLiteral("v%1.%2").arg(swVersion_).arg(hwVersion_)
-                : tr("Read failed"));
-        deviceVersionLabel_->setToolTip(
-            versionValid_
-                ? tr("Software version: v%1  Hardware version: v%2").arg(swVersion_).arg(hwVersion_)
-                : deviceDetectError_);
+        /* The USB-to-UART application cannot answer a version query */
+        if (appDevice_.viaSerial()) {
+            deviceVersionLabel_->setText(tr("-"));
+            deviceVersionLabel_->setToolTip(
+                tr("The firmware version cannot be read on the USB-UART (serial) channel"));
+        } else {
+            /* Only the numeric version is shown, e.g. v1.1 */
+            deviceVersionLabel_->setText(
+                versionValid_
+                    ? QStringLiteral("v%1.%2").arg(swVersion_).arg(hwVersion_)
+                    : tr("Read failed"));
+            deviceVersionLabel_->setToolTip(
+                versionValid_
+                    ? tr("Software version: v%1  Hardware version: v%2").arg(swVersion_).arg(hwVersion_)
+                    : deviceDetectError_);
+        }
         break;
 
     case DeviceMode::IapBootloader:
@@ -776,6 +882,14 @@ void MainWindow::onDeviceIndexChanged(int index)
         /* The firmware version cannot be queried in IAP mode */
         versionValid_ = false;
         versionQueriedKey_.clear();
+        updateDeviceStatusText();
+        return;
+    }
+
+    if (devices_.at(index).viaSerial()) {
+        /* The USB-to-UART application has no version command */
+        versionValid_ = false;
+        versionQueriedKey_ = deviceKey(devices_.at(index));
         updateDeviceStatusText();
         return;
     }
@@ -862,7 +976,7 @@ void MainWindow::setBusy(bool busy)
     deviceCombo_->setEnabled(!busy && !devices_.isEmpty());
     /* Fields locked by the V2 detection stay read only and must not become
        editable again just because the busy state changed */
-    baseAddressEdit_->setEnabled(!busy && !binBaseAddressLocked_);
+    baseAddressCombo_->setEnabled(!busy);
     iapVidEdit_->setEnabled(!busy && !binBaseAddressLocked_);
     iapPidEdit_->setEnabled(!busy && !binBaseAddressLocked_);
 }
@@ -907,6 +1021,8 @@ void MainWindow::onStartUpgrade()
     config.viaLibusb = (deviceMode_ == DeviceMode::AppRunning) && appDevice_.viaLibusb();
     config.libusbBus = appDevice_.bus;
     config.libusbAddress = appDevice_.address;
+    config.viaSerial = (deviceMode_ == DeviceMode::AppRunning) && appDevice_.viaSerial();
+    config.serialPort = appDevice_.comPort;
     config.deviceBusy = (deviceMode_ == DeviceMode::DeviceBusy) || appDevice_.busy;
     config.hidWaitSeconds = 15;
 

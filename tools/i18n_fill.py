@@ -51,6 +51,20 @@ ZH = {
         "设备已不存在（总线 %1，地址 %2）",
     " (in use)": "（被占用）",
 
+    # ---------------- SerialDev ----------------
+    "Serial port enumeration is only supported on Windows": "仅支持在 Windows 上枚举串口",
+    "Cannot enumerate the COM ports (error %1)": "无法枚举 COM 口（错误 %1）",
+    "Serial port access is only supported on Windows": "仅支持在 Windows 上访问串口",
+    "%1 is open in another program.\n"
+    "Close the program (for example a serial terminal) and retry.":
+        "%1 已被其他程序打开。\n"
+        "请关闭该程序（例如串口终端）后重试。",
+    "Cannot open %1 (error %2)": "无法打开 %1（错误 %2）",
+    "Cannot query the settings of %1 (error %2)": "无法查询 %1 的设置（错误 %2）",
+    "Cannot set the IAP baud rate on %1 (error %2)": "无法在 %1 上设置 IAP 波特率（错误 %2）",
+    "The firmware version cannot be read on the USB-UART (serial) channel":
+        "无法通过 USB 转串口（serial）通道读取固件版本",
+
     # ---------------- ThemeManager / View menu ----------------
     "Follow System(&S)": "跟随系统(&S)",
     "Light(&L)": "浅色(&L)",
@@ -89,6 +103,7 @@ ZH = {
         "向设备（CH375 索引 %1）发送进入 IAP 模式命令 ...",
     "Sending enter-IAP-mode command over libusb (bus %1, address %2) ...":
         "通过 libusb 发送进入 IAP 模式命令（总线 %1，地址 %2）...",
+    "Opening %1 at the IAP baud rate %2 ...": "正在以 IAP 波特率 %2 打开 %1 ...",
     "Failed to enter IAP mode: %1": "进入 IAP 模式失败：%1",
     "Command sent, waiting for the device to reset into a HID IAP device ...":
         "命令已发送，等待设备复位并切换为 HID IAP 设备 ...",
@@ -198,6 +213,15 @@ ZH = {
     "<font color='%1'>No device found</font>": "<font color='%1'>未发现设备</font>",
     "<font color='%1'>Device in use by another program</font>":
         "<font color='%1'>设备正被其他程序占用</font>",
+    "Slot 0: 0x08006000": "槽 0：0x08006000",
+    "Slot 1: 0x08052000": "槽 1：0x08052000",
+    "Slot 2: 0x0809E000": "槽 2：0x0809E000",
+    "Programming start address for .bin files (hexadecimal, e.g. 08006000). "
+    "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
+    "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.":
+        ".bin 文件的烧录起始地址（十六进制，如 08006000）。\n"
+        "WeAct Studio Logic Analyzer V2 请选择三个 APP 槽之一："
+        "槽 0 = 逻辑分析仪，槽 1 = USB 转串口，槽 2 = 示例。",
     "Select Firmware File": "选择固件文件",
     "Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)":
         "固件文件 (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;二进制文件 (*.bin);;所有文件 (*.*)",

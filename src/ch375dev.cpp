@@ -12,6 +12,7 @@
 
 #include "ch375_wrapper.h"
 #include "libusbdev.h"
+#include "serialdev.h"
 #include <hidapi.h>
 
 #include <cstring>
@@ -323,6 +324,17 @@ bool ch375dev_get_version_for(const Ch375DeviceInfo &device, quint8 &swVer,
         return false;
     }
 
+    if (device.viaSerial()) {
+        /* The USB-to-UART application speaks no version command on its CDC
+         * channels; the baud-rate escapes are all it understands. */
+        swVer = 0;
+        hwVer = 0;
+        errorMessage = QCoreApplication::translate(
+            "Ch375Dev",
+            "The firmware version cannot be read on the USB-UART (serial) channel");
+        return false;
+    }
+
     if (device.viaLibusb())
         return libusbdev_get_version(device.bus, device.address, swVer, hwVer, errorMessage);
 
@@ -335,6 +347,9 @@ bool ch375dev_enter_iap_for(const Ch375DeviceInfo &device, QString &errorMessage
         errorMessage = busyDeviceError();
         return false;
     }
+
+    if (device.viaSerial())
+        return serialdev_enter_iap(device.comPort, errorMessage);
 
     if (device.viaLibusb())
         return libusbdev_enter_iap(device.bus, device.address, errorMessage);
@@ -370,6 +385,11 @@ DeviceMode ch375dev_detect(quint16 appVid, quint16 appPid,
     QString libusbError;
     deviceList += libusbdev_enum_devices(appVid, appPid, libusbError);
 
+    /* Boards running the USB-to-UART application are CDC devices owned by
+     * usbser.sys and show up as COM ports */
+    QString serialError;
+    deviceList += serialdev_enum_devices(serialError);
+
     /* Prefer an application mode device for the version query / IAP switch.
      * Busy devices (held by another program) are listed but never selected. */
     for (const Ch375DeviceInfo &info : deviceList) {
@@ -393,6 +413,8 @@ DeviceMode ch375dev_detect(quint16 appVid, quint16 appPid,
     errorMessage = ch375Error;
     if (errorMessage.isEmpty())
         errorMessage = libusbError;
+    if (errorMessage.isEmpty())
+        errorMessage = serialError;
 
     return DeviceMode::NotFound;
 }

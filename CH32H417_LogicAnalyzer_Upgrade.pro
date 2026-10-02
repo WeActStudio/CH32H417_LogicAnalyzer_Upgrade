@@ -86,6 +86,7 @@ SOURCES += \
     src/firmwareimage.cpp \
     src/ch375dev.cpp \
     src/libusbdev.cpp \
+    src/serialdev.cpp \
     src/ch375_wrapper.c
 
 HEADERS += \
@@ -97,6 +98,7 @@ HEADERS += \
     src/firmwareimage.h \
     src/ch375dev.h \
     src/libusbdev.h \
+    src/serialdev.h \
     src/ch375_wrapper.h
 
 # ----------------------------------------------------------------------------
@@ -107,6 +109,11 @@ LIBS += -L$$MSYS_PREFIX_WIN/lib -lhidapi
 LIBS += -lsetupapi -lhid
 
 # ----------------------------------------------------------------------------
+#  Serial channel (USB-to-UART application): SetupAPI + cfgmgr32 are linked
+#  statically from the MinGW toolchain, no runtime DLL is needed.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
 #  libusb (MSYS2 mingw-w64-x86_64-libusb, static library)
 #
 #  Second way to reach a board: the CH375 driver and a generic USB driver
@@ -115,7 +122,7 @@ LIBS += -lsetupapi -lhid
 # ----------------------------------------------------------------------------
 INCLUDEPATH += $$MSYS_PREFIX_WIN/include/libusb-1.0
 LIBS += -L$$MSYS_PREFIX_WIN/lib -lusb-1.0
-LIBS += -lsetupapi
+LIBS += -lsetupapi -lcfgmgr32
 
 # ----------------------------------------------------------------------------
 #  UI translation (Simplified Chinese)

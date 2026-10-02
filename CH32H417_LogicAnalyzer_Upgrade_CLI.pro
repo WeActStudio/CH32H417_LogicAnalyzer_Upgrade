@@ -66,6 +66,7 @@ SOURCES += \
     src/firmwareimage.cpp \
     src/ch375dev.cpp \
     src/libusbdev.cpp \
+    src/serialdev.cpp \
     src/ch375_wrapper.c
 
 HEADERS += \
@@ -74,6 +75,7 @@ HEADERS += \
     src/firmwareimage.h \
     src/ch375dev.h \
     src/libusbdev.h \
+    src/serialdev.h \
     src/ch375_wrapper.h
 
 # ----------------------------------------------------------------------------
@@ -88,7 +90,7 @@ LIBS += -lsetupapi -lhid
 # ----------------------------------------------------------------------------
 INCLUDEPATH += $$MSYS_PREFIX_WIN/include/libusb-1.0
 LIBS += -L$$MSYS_PREFIX_WIN/lib -lusb-1.0
-LIBS += -lsetupapi
+LIBS += -lsetupapi -lcfgmgr32
 
 # ----------------------------------------------------------------------------
 #  Windows resources (icon + version information)

@@ -12,6 +12,7 @@
 #include "firmwareimage.h"
 #include "ch375dev.h"
 #include "libusbdev.h"
+#include "serialdev.h"
 
 #include <hidapi.h>
 
@@ -221,29 +222,35 @@ bool IapWorker::enterIapMode()
 
     /*
      * A CH375 index is only required for the CH375 channel; a libusb upgrade
-     * addresses the board by bus/address instead (ch375Index is -1 there).
+     * addresses the board by bus/address and a serial upgrade by its COM port
+     * (ch375Index is -1 on all other channels).
      */
-    if (!config_.viaLibusb && config_.ch375Index < 0) {
+    if (!config_.viaLibusb && !config_.viaSerial && config_.ch375Index < 0) {
         log(tr("No usable CH375 device index, cannot send the switch command"));
         return false;
     }
 
     /*
-     * The board sits in application mode on one of two channels: the CH375
-     * driver, or a generic USB driver (WinUSB) reached through libusb. Both
-     * carry the same command, only the transport differs.
+     * The board sits in application mode on one of three channels: the CH375
+     * driver, a generic USB driver (WinUSB) reached through libusb, or a COM
+     * port when the USB-to-UART application is running. All of them carry the
+     * same request, only the transport differs - on the serial channel the
+     * request *is* the baud rate.
      */
-    if (config_.viaLibusb) {
+    QString error;
+    bool sent = false;
+    if (config_.viaSerial) {
+        log(tr("Opening %1 at the IAP baud rate %2 ...")
+                .arg(config_.serialPort).arg(CH32H417_U2U_IAP_BAUD));
+        sent = serialdev_enter_iap(config_.serialPort, error);
+    } else if (config_.viaLibusb) {
         log(tr("Sending enter-IAP-mode command over libusb (bus %1, address %2) ...")
                 .arg(config_.libusbBus).arg(config_.libusbAddress));
+        sent = libusbdev_enter_iap(config_.libusbBus, config_.libusbAddress, error);
     } else {
         log(tr("Sending enter-IAP-mode command to device (CH375 index %1) ...").arg(config_.ch375Index));
+        sent = ch375dev_enter_iap(config_.ch375Index, error);
     }
-
-    QString error;
-    const bool sent = config_.viaLibusb
-                          ? libusbdev_enter_iap(config_.libusbBus, config_.libusbAddress, error)
-                          : ch375dev_enter_iap(config_.ch375Index, error);
     if (!sent) {
         log(tr("Failed to enter IAP mode: %1").arg(error));
         return false;

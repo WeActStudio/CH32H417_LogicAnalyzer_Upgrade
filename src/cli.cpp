@@ -673,12 +673,12 @@ void printDeviceList(const QList<Ch375DeviceInfo> &devices)
 }
 
 /**
- * Pick the device to upgrade: an explicit index / serial number wins,
- * otherwise the first application mode device, otherwise a device already in
- * IAP mode.
+ * Pick the device to upgrade: an explicit index / serial number / COM port
+ * wins, otherwise the first application mode device, otherwise a device
+ * already in IAP mode.
  *
  * A board is claimed by one driver at a time, so it appears on a single
- * channel. When both channels report an application mode device (possible
+ * channel. When several channels report an application mode device (possible
  * while a board is re-enumerating) the CH375 one is used, unless --libusb was
  * given.
  */
@@ -695,7 +695,10 @@ int selectDevice(const QList<Ch375DeviceInfo> &devices, const QString &selector,
                     selected = info;
                     return 0;
                 }
-            } else if (info.serial.startsWith(selector, Qt::CaseInsensitive)) {
+            } else if (info.serial.startsWith(selector, Qt::CaseInsensitive)
+                       || (!info.comPort.isEmpty()
+                           && info.comPort.compare(selector, Qt::CaseInsensitive) == 0)) {
+                /* A serial device can be picked by its COM port name, too */
                 selected = info;
                 return 0;
             }
@@ -1074,10 +1077,12 @@ int cliRunImpl(const QStringList &args)
     config.iapVid = opt.iapVid;
     config.iapPid = opt.iapPid;
     config.alreadyInIap = device.isIap;
-    config.ch375Index = (!device.isIap && !device.viaLibusb()) ? device.index : -1;
+    config.ch375Index = (!device.isIap && !device.viaLibusb() && !device.viaSerial()) ? device.index : -1;
     config.viaLibusb = !device.isIap && device.viaLibusb();
     config.libusbBus = device.bus;
     config.libusbAddress = device.address;
+    config.viaSerial = !device.isIap && device.viaSerial();
+    config.serialPort = device.comPort;
     config.deviceBusy = device.busy;
     config.hidWaitSeconds = opt.waitSeconds;
 

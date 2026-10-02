@@ -129,9 +129,10 @@ private:
     QLineEdit *fileEdit_;
     QPushButton *browseButton_;
     QLabel *firmwareInfoLabel_;
-    QLineEdit *baseAddressEdit_;
+    QComboBox *baseAddressCombo_;     /* BIN base address: free hex input, V2 gets slot presets */
     QLabel *baseAddressHintLabel_;    /* Hexadecimal note behind the BIN base address */
-    bool binBaseAddressLocked_;       /* V2 boards are fixed at 0x08006000, not editable */
+    bool binBaseAddressLocked_;       /* V2 boards: IAP VID/PID fixed, base picks a slot */
+    void updateBaseAddressSlots(bool v2);
 
     /* Options section */
     QLineEdit *iapVidEdit_;

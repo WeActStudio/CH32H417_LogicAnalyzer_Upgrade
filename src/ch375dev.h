@@ -24,6 +24,16 @@
 #define CH32H417_IAP_VID    0x1A86
 #define CH32H417_IAP_PID    0xFE17
 
+/* USB IDs of the USB-to-UART application (CDC composite device, serial
+ * channel). USB 2.0 (USBHS) and USB 3.0 (USBSS) share the same PID on
+ * purpose, so the host keeps the same COM port numbers at both speeds. */
+#define CH32H417_U2U_VID    0x1A86
+#define CH32H417_U2U_PID    0x5540
+
+/* The baud rate that makes the USB-to-UART firmware reboot into IAP mode.
+ * Kept in sync with DEF_U2U_IAP_BAUD in the firmware usb2uart.h. */
+#define CH32H417_U2U_IAP_BAUD   2048u
+
 /* Pipe number of the command channel */
 #define CH32H417_PIPE_CMD   1
 
@@ -43,6 +53,7 @@
  *
  *   Ch375  - CH375DLL.DLL / CH375WDM.sys (application mode)
  *   Libusb - generic USB driver (WinUSB on Windows), application mode
+ *   Serial - the USB-to-UART application, a CDC device owned by usbser.sys
  *   Hid    - the IAP bootloader, seen by hidapi after the mode switch
  *
  * The USB protocol is identical on all of them, only the transport differs.
@@ -51,6 +62,7 @@ enum class DeviceChannel
 {
     Ch375,
     Libusb,
+    Serial,
     Hid
 };
 
@@ -67,6 +79,7 @@ struct Ch375DeviceInfo
     quint16 pid = 0;
     QString name;           /* Device path/name reported by the driver, may be empty */
     QString serial;         /* USB serial number (lower case), parsed from the device path */
+    QString comPort;        /* COM port name (serial channel), e.g. "COM5" */
     bool isIap = false;     /* true = IAP upgrade mode (HID), false = application mode */
     bool busy = false;      /* true = the board matches the USB IDs but is held by
                              * another program / driver, so it cannot be opened */
@@ -81,6 +94,9 @@ struct Ch375DeviceInfo
     /** Product name derived from the serial number prefix; falls back to CH32H417 */
     QString modelName() const
     {
+        /* The USB-to-UART PID belongs to the V2 USB-UART firmware alone */
+        if (viaSerial() && pid == CH32H417_U2U_PID)
+            return QStringLiteral("WeAct Studio Logic Analyzer V2");
         if (serial.startsWith(QLatin1String(CH32H417_SN_PREFIX_V2)))
             return QStringLiteral("WeAct Studio Logic Analyzer V2");
         if (serial.startsWith(QLatin1String(CH32H417_SN_PREFIX_V1)))
@@ -91,12 +107,17 @@ struct Ch375DeviceInfo
     /** True when the device is reached through libusb / WinUSB */
     bool viaLibusb() const { return channel == DeviceChannel::Libusb; }
 
+    /** True when the device is reached through a CDC COM port (USB-to-UART app) */
+    bool viaSerial() const { return channel == DeviceChannel::Serial; }
+
     /** Channel name shown in the logs and in the device list */
     QString channelName() const
     {
         switch (channel) {
         case DeviceChannel::Libusb:
             return QStringLiteral("libusb");
+        case DeviceChannel::Serial:
+            return QStringLiteral("serial");
         case DeviceChannel::Hid:
             return QStringLiteral("HID");
         case DeviceChannel::Ch375:
@@ -109,12 +130,19 @@ struct Ch375DeviceInfo
     QString description() const
     {
         /*
-         * Application mode shows the index inside its channel; IAP mode has
-         * none, so it gets a channel tag instead.
+         * Application mode shows the index inside its channel; the serial
+         * channel names the COM port instead, and IAP mode has neither, so it
+         * gets a channel tag.
          */
-        const QString tag = isIap ? QStringLiteral("IAP")
-                                  : (viaLibusb() ? QStringLiteral("USB#%1").arg(index)
-                                                 : QStringLiteral("#%1").arg(index));
+        QString tag;
+        if (isIap)
+            tag = QStringLiteral("IAP");
+        else if (viaSerial())
+            tag = comPort;
+        else if (viaLibusb())
+            tag = QStringLiteral("USB#%1").arg(index);
+        else
+            tag = QStringLiteral("#%1").arg(index);
         QString text = QString("%1  %2  %3").arg(tag).arg(idString()).arg(modelName());
         if (!serial.isEmpty())
             text += QStringLiteral("  SN:%1").arg(serial);
@@ -205,9 +233,10 @@ bool ch375dev_enter_iap_for(const Ch375DeviceInfo &device, QString &errorMessage
  * Determine the current mode of the device.
  *
  * All channels are scanned: the CH375 channel, the HID channel (boards that
- * already sit in the bootloader) and the libusb channel (boards bound to a
- * generic USB driver such as WinUSB). A missing CH375 driver is not an error
- * any more as long as another channel can see the board.
+ * already sit in the bootloader), the libusb channel (boards bound to a
+ * generic USB driver such as WinUSB) and the serial channel (boards running
+ * the USB-to-UART application, seen as COM ports). A missing CH375 driver is
+ * not an error any more as long as another channel can see the board.
  *
  * @param appIndex   Output: CH375 index in application mode, -1 if not found
  *                   or if the board was found on another channel
