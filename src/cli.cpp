@@ -31,6 +31,7 @@
 #include "ch375_wrapper.h"
 #include "firmwareimage.h"
 #include "iapworker.h"
+#include "iapctl.h"
 
 #include <cstdio>
 #include <cstring>
@@ -60,6 +61,8 @@ struct CliOptions
     bool quiet = false;
     bool verbose = false;
     bool preferLibusb = false;   /* Use the libusb / WinUSB channel when both can see the board */
+    bool reboot = false;         /* Reboot the board into its active slot */
+    int slotSwitch = -1;         /* Switch to this APP slot, -1 = do not switch */
 
     QString firmware;
     QString device;
@@ -456,6 +459,10 @@ void printUsage(FILE *stream)
         "\n"
         "Other commands:\n"
         "  -l, --list               List the attached devices and exit\n"
+        "      --reboot             Reboot a board that sits in IAP mode into its\n"
+        "                           active slot (no firmware needed)\n"
+        "      --slot <0|1|2>       Make another APP slot active and boot it\n"
+        "                           (board must sit in IAP mode)\n"
         "  -h, --help               Show this help and exit\n"
         "      --version            Show the version and exit\n"
         "\n"
@@ -466,6 +473,7 @@ void printUsage(FILE *stream)
         "  \"CH32H417 Logic Analyzer Upgrade\" --list\n"
         "  \"CH32H417 Logic Analyzer Upgrade\" -f firmware.hex\n"
         "  \"CH32H417 Logic Analyzer Upgrade\" -f app.bin -b 08006000 -d 0 -q\n"
+        "  \"CH32H417 Logic Analyzer Upgrade\" --slot 1\n"
         "\n"
         "Note: the graphical interface only opens when the program is started\n"
         "      from Windows Explorer (or any other non-console parent). From a\n"
@@ -559,6 +567,25 @@ bool parseArgs(const QStringList &args, CliOptions &opt, QString &error)
         if (arg == QLatin1String("--libusb")) {
             /* Prefer the libusb / WinUSB channel over the CH375 one */
             opt.preferLibusb = true;
+            continue;
+        }
+        if (arg == QLatin1String("--reboot")) {
+            opt.reboot = true;
+            continue;
+        }
+        if (arg == QLatin1String("--slot") || arg.startsWith(QLatin1String("--slot="))) {
+            if (!optionValue(args, i, arg, QStringLiteral("slot"), value)) {
+                error = QStringLiteral("Missing value for --slot");
+                return false;
+            }
+            bool ok = false;
+            const int slot = value.toInt(&ok);
+            if (!ok || slot < 0 || slot >= IAP_APP_SLOT_NUM) {
+                error = QStringLiteral("Invalid slot number: %1 (expected 0..%2)")
+                            .arg(value).arg(IAP_APP_SLOT_NUM - 1);
+                return false;
+            }
+            opt.slotSwitch = slot;
             continue;
         }
         if (arg == QLatin1String("--cli")) {
@@ -1010,6 +1037,52 @@ int cliRunImpl(const QStringList &args)
     if (opt.list) {
         printDeviceList(devices);
         return devices.isEmpty() ? kExitNoDevice : kExitOk;
+    }
+
+    /* ---------------------------------------------------------------------
+     * Bootloader control: reboot / slot switch (no firmware file involved)
+     * --------------------------------------------------------------------- */
+    if (opt.reboot || opt.slotSwitch >= 0) {
+        /* Both commands exist only in the IAP bootloader */
+        bool iapPresent = false;
+        for (const Ch375DeviceInfo &info : devices) {
+            if (info.isIap)
+                iapPresent = true;
+        }
+        if (!iapPresent) {
+            printError(QStringLiteral("Error: no CH32H417 device in IAP mode found.\n"
+                                      "These commands need a board that sits in the "
+                                      "bootloader (power-cycle it with the button held)."));
+            printDeviceList(devices);
+            return kExitNoDevice;
+        }
+
+        QString error;
+        if (opt.reboot) {
+            if (!opt.quiet)
+                printLine(QStringLiteral("Rebooting the device into its active slot ..."));
+            if (!iapctl_reboot(opt.iapVid, opt.iapPid, error)) {
+                printError(QStringLiteral("Error: %1").arg(error));
+                return kExitUpgradeFailed;
+            }
+            if (!opt.quiet)
+                printLine(QStringLiteral("OK: reboot request accepted, the device restarts"));
+        } else {
+            if (!opt.quiet) {
+                printLine(QStringLiteral("Switching to APP slot %1 (0x%2) ...")
+                              .arg(opt.slotSwitch)
+                              .arg(iapctl_slot_base_address(opt.slotSwitch), 8, 16, QLatin1Char('0')));
+            }
+            if (!iapctl_set_slot(opt.iapVid, opt.iapPid, opt.slotSwitch, error)) {
+                printError(QStringLiteral("Error: %1").arg(error));
+                return kExitUpgradeFailed;
+            }
+            if (!opt.quiet) {
+                printLine(QStringLiteral("OK: slot %1 is now active, the device reboots into it")
+                              .arg(opt.slotSwitch));
+            }
+        }
+        return kExitOk;
     }
 
     /* ---------------------------------------------------------------------

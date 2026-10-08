@@ -61,6 +61,10 @@ public Q_SLOTS:
 
 private Q_SLOTS:
     void onRefreshDevices();
+    void onIapButtonClicked();
+    void updateIapButton();
+    void onRebootDevice();
+    void onSlotActionTriggered();
     void onBrowseFirmware();
     void onStartUpgrade();
     void onClearLog();
@@ -112,6 +116,7 @@ private:
     quint16 iapVid() const;
     quint16 iapPid() const;
     quint32 binBaseAddress() const;
+    void updateBinBaseAddressFromUi();
     void updateBaseAddressHint();
     void updateV2Lock();
 
@@ -125,6 +130,18 @@ private:
     QLabel *deviceVersionLabel_;
     QTimer *autoRefreshTimer_;
 
+    /* Bootloader commands (reboot / slot switch) */
+    bool bootloaderControlAvailable() const;
+    void updateBootloaderActions();
+    void reportBootloaderUnavailable();
+    void runSlotSwitch(int slot);
+
+    /* Upgrade worker plumbing, shared by the full upgrade and the
+       "reboot into IAP" button */
+    IapWorker::Config buildIapWorkerConfig() const;
+    void startIapWorker(const IapWorker::Config &config, bool iapOnly);
+    bool iapOnlyRun_;           /* The running worker only switches to IAP */
+
     /* Firmware section */
     QLineEdit *fileEdit_;
     QPushButton *browseButton_;
@@ -132,6 +149,13 @@ private:
     QComboBox *baseAddressCombo_;     /* BIN base address: free hex input, V2 gets slot presets */
     QLabel *baseAddressHintLabel_;    /* Hexadecimal note behind the BIN base address */
     bool binBaseAddressLocked_;       /* V2 boards: IAP VID/PID fixed, base picks a slot */
+    /*
+     * The current BIN base address, kept aside from the combo box: the slot
+     * list is rebuilt (and briefly emptied) on every device refresh, so the
+     * value must not be read back from the widget - a lost value would reset
+     * the slot selection to the first entry after an upgrade.
+     */
+    quint32 binBaseAddressValue_;
     void updateBaseAddressSlots(bool v2);
 
     /* Options section */
@@ -145,6 +169,9 @@ private:
     QLabel *logTitleLabel_;
 
     /* Buttons */
+    QLabel *iapSlotLabel_;          /* "Reboot into:", only shown in IAP mode */
+    QList<QPushButton *> iapSlotButtons_;
+    QPushButton *iapButton_;           /* Reboot into IAP / leave IAP, depends on the mode */
     QPushButton *startButton_;
     QPushButton *exitButton_;
 
@@ -158,6 +185,10 @@ private:
     QAction *exitAction_;
     QAction *refreshAction_;
     QAction *clearLogAction_;
+    /* Bootloader control (only available while a board sits in IAP mode) */
+    QAction *rebootAction_;
+    QMenu *slotMenu_;
+    QList<QAction *> slotActions_;
     QAction *aboutAction_;
     QActionGroup *langActionGroup_;
     QList<QAction *> langActions_;

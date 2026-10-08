@@ -81,6 +81,7 @@ SOURCES += \
     src/cli.cpp \
     src/mainwindow.cpp \
     src/iapworker.cpp \
+    src/iapctl.cpp \
     src/languagemanager.cpp \
     src/thememanager.cpp \
     src/firmwareimage.cpp \
@@ -93,6 +94,7 @@ HEADERS += \
     src/cli.h \
     src/mainwindow.h \
     src/iapworker.h \
+    src/iapctl.h \
     src/languagemanager.h \
     src/thememanager.h \
     src/firmwareimage.h \

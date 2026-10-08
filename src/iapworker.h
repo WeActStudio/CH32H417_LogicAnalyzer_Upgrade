@@ -62,6 +62,12 @@ public:
         bool viaSerial = false;                 /* Application mode device reached through a CDC COM port */
         QString serialPort;                     /* COM port of the serial device, e.g. "COM5" */
         bool deviceBusy = false;                /* Device is held by another program, refuse to upgrade */
+        /*
+         * Only switch the board into its bootloader and stop there. Used by
+         * the "reboot into IAP" button, which is the first half of an upgrade
+         * without the erase / program / verify part.
+         */
+        bool onlyEnterIap = false;
         bool alreadyInIap = false;              /* Device is already in IAP/HID mode */
         int hidWaitSeconds = 10;                /* Seconds to wait for the HID device to appear */
     };

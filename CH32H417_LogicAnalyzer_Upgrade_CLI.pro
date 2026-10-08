@@ -63,6 +63,7 @@ SOURCES += \
     src/climain.cpp \
     src/cli.cpp \
     src/iapworker.cpp \
+    src/iapctl.cpp \
     src/firmwareimage.cpp \
     src/ch375dev.cpp \
     src/libusbdev.cpp \
@@ -72,6 +73,7 @@ SOURCES += \
 HEADERS += \
     src/cli.h \
     src/iapworker.h \
+    src/iapctl.h \
     src/firmwareimage.h \
     src/ch375dev.h \
     src/libusbdev.h \

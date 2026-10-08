@@ -522,7 +522,10 @@ void IapWorker::run()
     QByteArray firmwareData;
     quint32 startAddr = 0;
 
-    if (!loadFirmware(firmwareData, startAddr)) {
+    /* Switching to the bootloader alone needs no firmware file at all, so it
+       must not be loaded here - a missing file would abort the request before
+       the board is even asked to reboot */
+    if (!config_.onlyEnterIap && !loadFirmware(firmwareData, startAddr)) {
         Q_EMIT finished(false, tr("Failed to load the firmware file"));
         return;
     }
@@ -531,6 +534,13 @@ void IapWorker::run()
     updateProgress(10, tr("Entering IAP mode ..."));
     if (!enterIapMode()) {
         Q_EMIT finished(false, tr("Unable to enter IAP mode"));
+        return;
+    }
+
+    /* The board is in its bootloader now - that was the whole request */
+    if (config_.onlyEnterIap) {
+        updateProgress(100, tr("Device is now in IAP mode"));
+        Q_EMIT finished(true, tr("The device rebooted into IAP mode"));
         return;
     }
 

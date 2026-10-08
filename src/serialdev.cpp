@@ -36,6 +36,15 @@ const GUID kComPortInterfaceGuid = {
 };
 
 /*
+ * How long to wait for the board to actually disappear from the system after
+ * the baud rate was sent. The firmware resets within a few milliseconds, but
+ * Windows keeps the device instance listed for a moment, so a single check
+ * right after the call would still see it.
+ */
+const int kRebootPollCount = 20;          /* 20 x 100 ms = 2 s */
+const DWORD kRebootPollIntervalMs = 100;
+
+/*
  * A USB device instance ID looks like:
  *   USB\VID_1A86&PID_5540\B5E339E33906E19C7F6416064C   (has a serial string)
  *   USB\VID_1A86&PID_5540\9&26C87144&1                 (location style, no
@@ -264,10 +273,38 @@ bool serialdev_enter_iap(const QString &comPort, QString &errorMessage)
      */
     dcb.BaudRate = CH32H417_U2U_IAP_BAUD;
     if (!::SetCommState(handle, &dcb)) {
+        const DWORD err = ::GetLastError();
+        ::CloseHandle(handle);
+
+        /*
+         * The board resets the moment the request reaches it, so the call
+         * normally ends with "device does not exist" - the command went
+         * through, and reporting a failure here only makes the user
+         * power-cycle a board that is already on its way into IAP.
+         *
+         * Which code comes out of that race depends on the driver state, so
+         * the verdict is not taken from the code alone - and it is not taken
+         * straight away either: Windows keeps the vanished device listed for
+         * a short while, so "still there" means nothing at this point. What
+         * counts is whether it is gone a moment later, so the board is polled
+         * for a while. No CDC device of this firmware left = it rebooted = the
+         * request arrived and that is a success; still there after the wait =
+         * the request never made it, which is a real failure.
+         */
+        if (err == ERROR_DEV_NOT_EXIST || err == ERROR_DEVICE_NOT_CONNECTED
+            || err == ERROR_GEN_FAILURE)
+            return true;
+
+        for (int attempt = 0; attempt < kRebootPollCount; ++attempt) {
+            ::Sleep(kRebootPollIntervalMs);
+            QString ignored;
+            if (serialdev_enum_devices(ignored).isEmpty())
+                return true;
+        }
+
         errorMessage = QCoreApplication::translate(
             "SerialDev", "Cannot set the IAP baud rate on %1 (error %2)")
-                           .arg(comPort).arg(::GetLastError());
-        ::CloseHandle(handle);
+                           .arg(comPort).arg(err);
         return false;
     }
 

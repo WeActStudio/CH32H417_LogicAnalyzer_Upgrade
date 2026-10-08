@@ -65,6 +65,18 @@ ZH = {
     "The firmware version cannot be read on the USB-UART (serial) channel":
         "无法通过 USB 转串口（serial）通道读取固件版本",
 
+    # ---------------- IapCtl ----------------
+    "No IAP device found (VID:0x%1 PID:0x%2).\n"
+    "These commands only work while the board sits in the bootloader.":
+        "未找到 IAP 设备 (VID:0x%1 PID:0x%2)。\n"
+        "这些命令只能在设备处于引导程序（IAP）时使用。",
+    "Unexpected answer from the bootloader: 0x%1": "引导程序应答异常：0x%1",
+    "The bootloader did not answer (timeout)": "引导程序无应答（超时）",
+    "Failed to send command 0x%1 to the bootloader": "向引导程序发送命令 0x%1 失败",
+    "The bootloader refused the request (error code %1)":
+        "引导程序拒绝了该请求（错误码 %1）",
+    "Slot number out of range (0..%1)": "槽位编号超出范围（0..%1）",
+
     # ---------------- ThemeManager / View menu ----------------
     "Follow System(&S)": "跟随系统(&S)",
     "Light(&L)": "浅色(&L)",
@@ -213,9 +225,44 @@ ZH = {
     "<font color='%1'>No device found</font>": "<font color='%1'>未发现设备</font>",
     "<font color='%1'>Device in use by another program</font>":
         "<font color='%1'>设备正被其他程序占用</font>",
-    "Slot 0: 0x08006000": "槽 0：0x08006000",
-    "Slot 1: 0x08052000": "槽 1：0x08052000",
-    "Slot 2: 0x0809E000": "槽 2：0x0809E000",
+    "Slot %1: 0x%2": "槽 %1：0x%2",
+    "Reboot into Active Slot(&B)": "重启到当前槽(&B)",
+    "Switch APP Slot(&S)": "切换 APP 槽(&S)",
+    "Rebooting the device into its active slot ...": "正在把设备重启到当前槽 ...",
+    "Reboot failed: %1": "重启失败：%1",
+    "Reboot request accepted, the device restarts ...":
+        "重启请求已接受，设备即将重启 ...",
+    "Switching to APP slot %1 (0x%2) ...": "正在切换到 APP 槽 %1（0x%2）...",
+    "Slot switch failed: %1": "切换槽位失败：%1",
+    "Slot %1 is now active, the device reboots into it ...":
+        "槽 %1 现已生效，设备将重启进入该槽 ...",
+    "Not available while an upgrade is running": "升级进行中不可用",
+    "Needs a board that sits in the IAP bootloader": "需要设备处于 IAP 引导程序模式",
+    "Not Available": "不可用",
+    "Wait for the running upgrade to finish.": "请等待当前升级完成。",
+    "This command needs a board that sits in the IAP bootloader, "
+    "the current device is in application mode.":
+        "该命令需要设备处于 IAP 引导程序模式，当前设备处于运行模式。",
+    "No CH32H417 device in IAP mode found.\n"
+    "These commands need a board that sits in the bootloader "
+    "(power-cycle it with the button held).":
+        "未找到处于 IAP 模式的 CH32H417 设备。\n"
+        "这些命令需要设备处于引导程序中（按住按键重新上电）。",
+    "Reboot into &IAP": "重启到 IAP(&I)",
+    "Reboot into:": "重启到：",
+    "Slot %1": "槽 %1",
+    "Make slot %1 (0x%2) the active one and boot it":
+        "把槽 %1（0x%2）设为当前槽并启动",
+    "Leave &IAP": "退出 IAP(&I)",
+    "Reboot the board and run the active APP slot again":
+        "重启设备并再次运行当前 APP 槽",
+    "Reboot the board into its bootloader (IAP mode)":
+        "将设备重启进入引导程序（IAP 模式）",
+    "Rebooting the device out of IAP mode ...": "正在把设备退出 IAP 模式 ...",
+    "Leaving IAP failed: %1": "退出 IAP 失败：%1",
+    "Device is now in IAP mode": "设备已处于 IAP 模式",
+    "Device is in IAP Mode": "设备处于 IAP 模式",
+    "The device rebooted into IAP mode": "设备已重启进入 IAP 模式",
     "Programming start address for .bin files (hexadecimal, e.g. 08006000). "
     "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
     "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.":
@@ -244,6 +291,7 @@ ZH = {
     "Target device: %1": "目标设备：%1",
     "Target device: CH375 #%1": "目标设备：CH375 #%1",
     "Target device: libusb (bus %1, address %2)": "目标设备：libusb（总线 %1，地址 %2）",
+    "Target device: serial (COM port %1)": "目标设备：串口（COM 口 %1）",
     "Target device: IAP HID (VID:0x%1 PID:0x%2)": "目标设备：IAP HID (VID:0x%1 PID:0x%2)",
     "Upgrade Complete": "升级完成",
     "Complete": "完成",
@@ -271,10 +319,15 @@ ZH = {
     "<a href='https://www.gnu.org/licenses/gpl-3.0.html'>"
     "https://www.gnu.org/licenses/gpl-3.0.html</a></p>"
     "<p>Built with Qt %2, statically compiled with MSYS2 (MINGW64).</p>"
-    "<p>Upgrade sequence: the enter-IAP command is sent over the CH375 "
-    "channel, the device resets into a HID IAP device, then erase / "
-    "program / verify / finish.</p>"
-    "<p>The CH375 driver must be installed.</p>":
+    "<p>Upgrade sequence: the enter-IAP command goes out over whichever "
+    "USB channel the board is on - CH375, libusb / WinUSB, or the COM "
+    "port of the USB-to-UART firmware. The board then resets into a HID "
+    "IAP device, followed by erase / program / verify / finish.</p>"
+    "<p>A board that already sits in IAP mode can also be rebooted into "
+    "its active slot, or switched to another APP slot, without "
+    "downloading anything.</p>"
+    "<p>Windows needs one driver for the board: the WCH CH375 driver, or "
+    "WinUSB when the board is bound to libusb.</p>":
         "<h3>CH32H417 逻辑分析仪<br>固件升级工具</h3>"
         "<p>版本：%1</p>"
         "<p><b>WeAct Studio</b><br>"
@@ -287,9 +340,13 @@ ZH = {
         "<a href='https://www.gnu.org/licenses/gpl-3.0.html'>"
         "https://www.gnu.org/licenses/gpl-3.0.html</a></p>"
         "<p>基于 Qt %2 开发，使用 MSYS2 (MINGW64) 静态编译。</p>"
-        "<p>升级流程：CH375 通道发送进入 IAP 命令 → 设备复位为 HID IAP 设备 → "
-        "擦除 / 编程 / 校验 / 结束。</p>"
-        "<p>需要安装 CH375 驱动。</p>",
+        "<p>升级流程：进入 IAP 命令通过板子所在的 USB 通道发出 —— CH375、"
+        "libusb / WinUSB，或 USB 转串口固件的 COM 口 —— 随后设备复位为 HID "
+        "IAP 设备，再执行擦除 / 编程 / 校验 / 结束。</p>"
+        "<p>已经处于 IAP 模式的板子还可以直接重启回当前槽，或切换到其它 APP "
+        "槽，无需下载固件。</p>"
+        "<p>Windows 需要为板子安装其中一种驱动：WCH CH375 驱动；"
+        "若板子绑定到 libusb，则安装 WinUSB。</p>",
     "Upgrade in Progress": "正在升级",
     "An upgrade is running; exiting now may corrupt the device firmware.\n"
     "Are you sure you want to exit?":

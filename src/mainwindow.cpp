@@ -13,6 +13,7 @@
 
 #include "ch375_wrapper.h"
 #include "firmwareimage.h"
+#include "iapctl.h"
 
 #include <QApplication>
 #include <QMenuBar>
@@ -130,12 +131,16 @@ MainWindow::MainWindow(QWidget *parent)
     , baseAddressCombo_(nullptr)
     , baseAddressHintLabel_(nullptr)
     , binBaseAddressLocked_(false)
+    , binBaseAddressValue_(0x08006000u)
+    , iapOnlyRun_(false)
     , iapVidEdit_(nullptr)
     , iapPidEdit_(nullptr)
     , progressBar_(nullptr)
     , progressLabel_(nullptr)
     , logView_(nullptr)
     , logTitleLabel_(nullptr)
+    , iapSlotLabel_(nullptr)
+    , iapButton_(nullptr)
     , startButton_(nullptr)
     , exitButton_(nullptr)
     , fileMenu_(nullptr)
@@ -147,6 +152,8 @@ MainWindow::MainWindow(QWidget *parent)
     , exitAction_(nullptr)
     , refreshAction_(nullptr)
     , clearLogAction_(nullptr)
+    , rebootAction_(nullptr)
+    , slotMenu_(nullptr)
     , aboutAction_(nullptr)
     , langActionGroup_(nullptr)
     , themeActionGroup_(nullptr)
@@ -330,8 +337,23 @@ void MainWindow::setupUi()
     /* ---------- Buttons ---------- */
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     buttonLayout->addStretch(1);
+
+    /* Bootloader only: "Reboot into:" plus one button per APP slot. The label
+       and the buttons sit next to each other, so the row starts with the
+       label and the buttons line up behind it. */
+    iapSlotLabel_ = new QLabel(central);
+    buttonLayout->addWidget(iapSlotLabel_);
+    for (int i = 0; i < IAP_APP_SLOT_NUM; ++i) {
+        QPushButton *button = new QPushButton(central);
+        iapSlotButtons_.append(button);
+        buttonLayout->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, i]() { runSlotSwitch(i); });
+    }
+
+    iapButton_ = new QPushButton(central);
     startButton_ = new QPushButton(central);
     exitButton_ = new QPushButton(central);
+    buttonLayout->addWidget(iapButton_);
     buttonLayout->addWidget(startButton_);
     buttonLayout->addWidget(exitButton_);
     mainLayout->addLayout(buttonLayout);
@@ -340,6 +362,7 @@ void MainWindow::setupUi()
 
     connect(refreshButton_, &QPushButton::clicked, this, &MainWindow::onRefreshDevices);
     connect(browseButton_, &QPushButton::clicked, this, &MainWindow::onBrowseFirmware);
+    connect(iapButton_, &QPushButton::clicked, this, &MainWindow::onIapButtonClicked);
     connect(startButton_, &QPushButton::clicked, this, &MainWindow::onStartUpgrade);
     connect(exitButton_, &QPushButton::clicked, this, &MainWindow::close);
     connect(fileEdit_, &QLineEdit::textChanged, this, &MainWindow::onFirmwarePathChanged);
@@ -353,10 +376,16 @@ void MainWindow::setupUi()
      * file on every keypress.
      */
     connect(baseAddressCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::updateFirmwareInfo);
-    if (baseAddressCombo_->isEditable() && baseAddressCombo_->lineEdit())
-        connect(baseAddressCombo_->lineEdit(), &QLineEdit::editingFinished,
-                this, &MainWindow::updateFirmwareInfo);
+            this, [this]() {
+                updateBinBaseAddressFromUi();
+                updateFirmwareInfo();
+            });
+    if (baseAddressCombo_->isEditable() && baseAddressCombo_->lineEdit()) {
+        connect(baseAddressCombo_->lineEdit(), &QLineEdit::editingFinished, this, [this]() {
+            updateBinBaseAddressFromUi();
+            updateFirmwareInfo();
+        });
+    }
 }
 
 void MainWindow::createMenus()
@@ -372,11 +401,26 @@ void MainWindow::createMenus()
 
     toolMenu_ = menuBar()->addMenu(QString());
     refreshAction_ = new QAction(this);
+    rebootAction_ = new QAction(this);
+    slotMenu_ = toolMenu_->addMenu(QString());
     clearLogAction_ = new QAction(this);
     toolMenu_->addAction(refreshAction_);
+    toolMenu_->addSeparator();
+    toolMenu_->addAction(rebootAction_);
+    toolMenu_->addAction(slotMenu_->menuAction());
+    toolMenu_->addSeparator();
     toolMenu_->addAction(clearLogAction_);
     connect(refreshAction_, &QAction::triggered, this, &MainWindow::onRefreshDevices);
     connect(clearLogAction_, &QAction::triggered, this, &MainWindow::onClearLog);
+    connect(rebootAction_, &QAction::triggered, this, &MainWindow::onRebootDevice);
+
+    /* One entry per APP slot; the data carries the slot index */
+    for (int i = 0; i < IAP_APP_SLOT_NUM; ++i) {
+        QAction *action = slotMenu_->addAction(QString());
+        action->setData(i);
+        slotActions_.append(action);
+        connect(action, &QAction::triggered, this, &MainWindow::onSlotActionTriggered);
+    }
 
     /* ---------- Theme menu (light / dark / follow system) ---------- */
     viewMenu_ = menuBar()->addMenu(QString());
@@ -456,6 +500,13 @@ void MainWindow::retranslateUi()
     fileEdit_->setPlaceholderText(tr("Select or drop a .hex / .bin firmware file"));
 
     logTitleLabel_->setText(tr("Upgrade Log"));
+    iapSlotLabel_->setText(tr("Reboot into:"));
+    for (int i = 0; i < iapSlotButtons_.size(); ++i) {
+        iapSlotButtons_.at(i)->setText(tr("Slot %1").arg(i));
+        iapSlotButtons_.at(i)->setToolTip(
+            tr("Make slot %1 (0x%2) the active one and boot it")
+                .arg(i).arg(iapctl_slot_base_address(i), 8, 16, QChar('0')));
+    }
     startButton_->setText(tr("Start Upgrade(&S)"));
     exitButton_->setText(tr("Exit(&X)"));
 
@@ -469,6 +520,13 @@ void MainWindow::retranslateUi()
         exitAction_->setText(tr("Exit(&X)"));
         toolMenu_->setTitle(tr("Tools(&T)"));
         refreshAction_->setText(tr("Refresh Devices(&R)"));
+        rebootAction_->setText(tr("Reboot into Active Slot(&B)"));
+        slotMenu_->setTitle(tr("Switch APP Slot(&S)"));
+        for (int i = 0; i < slotActions_.size(); ++i) {
+            slotActions_.at(i)->setText(tr("Slot %1: 0x%2")
+                                            .arg(i)
+                                            .arg(iapctl_slot_base_address(i), 8, 16, QChar('0')));
+        }
         clearLogAction_->setText(tr("Clear Log(&L)"));
         viewMenu_->setTitle(tr("View(&V)"));
         langMenu_->setTitle(tr("Language(&L)"));
@@ -490,6 +548,10 @@ void MainWindow::retranslateUi()
     updateDeviceStatusText();
     updateFirmwareInfo();
     updateProgressText();
+    if (rebootAction_) {
+        updateBootloaderActions();
+        updateIapButton();
+    }
 }
 
 /* ==========================================================================
@@ -553,9 +615,10 @@ void MainWindow::loadSettings()
     const QString baseText = settings.value("binBaseAddress", "08006000").toString();
     bool baseOk = false;
     const quint32 baseValue = baseText.toUInt(&baseOk, 16);
-    baseAddressCombo_->setEditText(baseOk
-        ? QString::number(baseValue, 16).rightJustified(8, QLatin1Char('0'))
-        : QStringLiteral("08006000"));
+    if (baseOk)
+        binBaseAddressValue_ = baseValue;
+    baseAddressCombo_->setEditText(QString::number(binBaseAddressValue_, 16)
+                                       .rightJustified(8, QLatin1Char('0')));
     iapVidEdit_->setText(settings.value("iapVid", "1A86").toString());
     iapPidEdit_->setText(settings.value("iapPid", "FE17").toString());
     restoreGeometry(settings.value("geometry").toByteArray());
@@ -595,21 +658,33 @@ quint16 MainWindow::iapPid() const
 
 quint32 MainWindow::binBaseAddress() const
 {
-    /*
-     * A preset slot item carries its address in Qt::UserRole, so picking from
-     * the dropdown needs no parsing. Typed text is plain hexadecimal, with an
-     * optional 0x prefix tolerated.
-     */
-    const QVariant data = baseAddressCombo_->itemData(baseAddressCombo_->currentIndex());
-    if (data.isValid())
-        return static_cast<quint32>(data.toUInt());
+    return binBaseAddressValue_;
+}
 
+/*
+ * Take the address out of the widget and remember it. Called whenever the user
+ * picks a slot or finishes typing an address - the stored value is what the
+ * upgrade uses, so it must survive the slot list being rebuilt.
+ */
+void MainWindow::updateBinBaseAddressFromUi()
+{
+    /* A preset slot item carries its address in Qt::UserRole */
+    const QVariant data = baseAddressCombo_->itemData(baseAddressCombo_->currentIndex());
+    if (data.isValid()) {
+        binBaseAddressValue_ = static_cast<quint32>(data.toUInt());
+        return;
+    }
+
+    /* Typed text is plain hexadecimal, with an optional 0x prefix tolerated.
+     * Text that does not parse (an empty field, a label) keeps the last good
+     * value rather than silently jumping back to the default. */
     bool ok = false;
     QString text = baseAddressCombo_->currentText().trimmed().toLower();
     if (text.startsWith(QLatin1String("0x")))
         text.remove(0, 2);
     const quint32 value = text.toUInt(&ok, 16);
-    return ok ? value : 0x08006000u;
+    if (ok)
+        binBaseAddressValue_ = value;
 }
 
 void MainWindow::updateBaseAddressHint()
@@ -637,28 +712,27 @@ void MainWindow::updateBaseAddressSlots(bool v2)
             return;                         /* already a plain hex input */
         }
 
-        /* Drop the presets but keep whatever the user had selected / typed */
-        const QString text = baseAddressCombo_->lineEdit()
-                                 ? baseAddressCombo_->lineEdit()->text()
-                                 : baseAddressCombo_->currentText();
+        /* Drop the presets; the field goes back to showing the bare address
+           (not a slot label, which would not parse any more) */
         baseAddressCombo_->clear();
-        baseAddressCombo_->setEditText(text);
+        baseAddressCombo_->setEditText(QString::number(binBaseAddressValue_, 16)
+                                           .rightJustified(8, QLatin1Char('0')));
         baseAddressCombo_->blockSignals(blocked);
         return;
     }
 
-    /* Remember the currently selected address so a periodic device refresh
-       does not reset the user's slot choice */
-    const quint32 previous = binBaseAddress();
-
+    /* Rebuild the list around the address in use, so neither a periodic device
+       refresh nor a V2 board coming and going resets the slot choice */
     baseAddressCombo_->clear();
-    baseAddressCombo_->addItem(tr("Slot 0: 0x08006000"), 0x08006000u);
-    baseAddressCombo_->addItem(tr("Slot 1: 0x08052000"), 0x08052000u);
-    baseAddressCombo_->addItem(tr("Slot 2: 0x0809E000"), 0x0809E000u);
+    for (int i = 0; i < IAP_APP_SLOT_NUM; ++i) {
+        baseAddressCombo_->addItem(tr("Slot %1: 0x%2").arg(i).arg(
+                                       iapctl_slot_base_address(i), 8, 16, QChar('0')),
+                                   iapctl_slot_base_address(i));
+    }
 
     int select = 0;
     for (int i = 0; i < baseAddressCombo_->count(); ++i) {
-        if (static_cast<quint32>(baseAddressCombo_->itemData(i).toUInt()) == previous) {
+        if (static_cast<quint32>(baseAddressCombo_->itemData(i).toUInt()) == binBaseAddressValue_) {
             select = i;
             break;
         }
@@ -781,6 +855,8 @@ void MainWindow::refreshDeviceList()
     }
 
     updateDeviceStatusText();
+    updateBootloaderActions();
+    updateIapButton();
 }
 
 /** Status text colours: kind 0=connected 1=IAP mode 2=not found (adapted to
@@ -858,6 +934,204 @@ void MainWindow::updateDeviceStatusText()
 void MainWindow::onRefreshDevices()
 {
     refreshDeviceList();
+}
+
+/* ==========================================================================
+ * The one button next to "Start Upgrade"
+ *
+ * In application mode it reboots the board into its bootloader - the first
+ * half of an upgrade, useful on its own to leave a board in the bootloader.
+ * In IAP mode the same button offers the way back: rebooting into the active
+ * slot, which is what CMD_IAP_REBOOT (0x85) does.
+ * ========================================================================== */
+
+void MainWindow::updateIapButton()
+{
+    if (!iapButton_)
+        return;
+
+    const bool inIap = (deviceMode_ == DeviceMode::IapBootloader);
+    const bool haveDevice = inIap || (deviceMode_ == DeviceMode::AppRunning);
+    const bool idle = haveDevice && !upgrading_;
+
+    /* The slot buttons only exist for a board that sits in the bootloader */
+    iapSlotLabel_->setVisible(inIap);
+    for (QPushButton *button : iapSlotButtons_) {
+        button->setVisible(inIap);
+        button->setEnabled(idle);
+    }
+
+    iapButton_->setText(inIap ? tr("Leave &IAP")
+                              : tr("Reboot into &IAP"));
+    iapButton_->setVisible(haveDevice);
+    iapButton_->setEnabled(idle);
+    iapButton_->setToolTip(inIap
+        ? tr("Reboot the board and run the active APP slot again")
+        : tr("Reboot the board into its bootloader (IAP mode)"));
+}
+
+void MainWindow::onIapButtonClicked()
+{
+    if (upgrading_ || !iapButton_)
+        return;
+
+    /* Leave the bootloader: the board runs its active slot again */
+    if (deviceMode_ == DeviceMode::IapBootloader) {
+        appendLog(tr("Rebooting the device out of IAP mode ..."));
+
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        QString error;
+        const bool ok = iapctl_reboot(iapVid(), iapPid(), error);
+        QApplication::restoreOverrideCursor();
+
+        if (!ok) {
+            appendLog(tr("Leaving IAP failed: %1").arg(error), true);
+            QMessageBox::critical(this, tr("Failed"), error);
+            return;
+        }
+
+        appendLog(tr("Reboot request accepted, the device restarts ..."));
+        setBusy(true);
+        QTimer::singleShot(2000, this, [this]() {
+            setBusy(false);
+            refreshDeviceList();
+        });
+        return;
+    }
+
+    /* Application mode: ask the board to reboot into its bootloader */
+    if (deviceMode_ != DeviceMode::AppRunning)
+        return;
+
+    /* No firmware file needed - the worker stops right after the switch */
+    IapWorker::Config config = buildIapWorkerConfig();
+    config.onlyEnterIap = true;
+    config.firmwarePath.clear();
+
+    startIapWorker(config, true);
+}
+
+/* ==========================================================================
+ * Bootloader control: reboot / slot switch
+ *
+ * Both commands exist only in the IAP bootloader, so they are offered only
+ * while a board actually sits there. They are single HID round trips (the
+ * firmware answers, then acts), which is short enough to do on the GUI thread
+ * with a busy cursor.
+ * ========================================================================== */
+
+/** True when the bootloader commands can be sent right now */
+bool MainWindow::bootloaderControlAvailable() const
+{
+    return deviceMode_ == DeviceMode::IapBootloader && !upgrading_;
+}
+
+/*
+ * The commands stay clickable even when they cannot run: a greyed out entry
+ * with no explanation reads like a broken feature. Clicking it then tells the
+ * user what is missing, which is what the command line version does with its
+ * "no device in IAP mode" error.
+ */
+void MainWindow::updateBootloaderActions()
+{
+    const QString hint = upgrading_
+        ? tr("Not available while an upgrade is running")
+        : (deviceMode_ == DeviceMode::IapBootloader
+               ? QString()
+               : tr("Needs a board that sits in the IAP bootloader"));
+
+    rebootAction_->setToolTip(hint);
+    slotMenu_->setToolTip(hint);
+}
+
+/** Why a bootloader command cannot run right now, and what to do about it */
+void MainWindow::reportBootloaderUnavailable()
+{
+    if (upgrading_) {
+        QMessageBox::information(this, tr("Not Available"),
+                                 tr("Wait for the running upgrade to finish."));
+        return;
+    }
+
+    appendLog(tr("This command needs a board that sits in the IAP bootloader, "
+                 "the current device is in application mode."), true);
+    QMessageBox::information(
+        this, tr("Not Available"),
+        tr("No CH32H417 device in IAP mode found.\n"
+           "These commands need a board that sits in the bootloader "
+           "(power-cycle it with the button held)."));
+}
+
+void MainWindow::onRebootDevice()
+{
+    if (!bootloaderControlAvailable()) {
+        reportBootloaderUnavailable();
+        return;
+    }
+
+    appendLog(tr("Rebooting the device into its active slot ..."));
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QString error;
+    const bool ok = iapctl_reboot(iapVid(), iapPid(), error);
+    QApplication::restoreOverrideCursor();
+
+    if (!ok) {
+        appendLog(tr("Reboot failed: %1").arg(error), true);
+        QMessageBox::critical(this, tr("Failed"), error);
+        return;
+    }
+
+    appendLog(tr("Reboot request accepted, the device restarts ..."));
+
+    /* The board reboots into its slot, so it comes back as an application
+       device - give it a moment, then let the device list catch up */
+    setBusy(true);
+    QTimer::singleShot(2000, this, [this]() {
+        setBusy(false);
+        refreshDeviceList();
+    });
+}
+
+void MainWindow::onSlotActionTriggered()
+{
+    QAction *action = qobject_cast<QAction *>(sender());
+    if (action)
+        runSlotSwitch(action->data().toInt());
+}
+
+/** Make another slot active and boot it (menu entries and the buttons) */
+void MainWindow::runSlotSwitch(int slot)
+{
+    if (!bootloaderControlAvailable()) {
+        reportBootloaderUnavailable();
+        return;
+    }
+
+    if (slot < 0 || slot >= IAP_APP_SLOT_NUM)
+        return;
+
+    appendLog(tr("Switching to APP slot %1 (0x%2) ...")
+                  .arg(slot).arg(iapctl_slot_base_address(slot), 8, 16, QChar('0')));
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QString error;
+    const bool ok = iapctl_set_slot(iapVid(), iapPid(), slot, error);
+    QApplication::restoreOverrideCursor();
+
+    if (!ok) {
+        appendLog(tr("Slot switch failed: %1").arg(error), true);
+        QMessageBox::critical(this, tr("Failed"), error);
+        return;
+    }
+
+    appendLog(tr("Slot %1 is now active, the device reboots into it ...").arg(slot));
+
+    setBusy(true);
+    QTimer::singleShot(2000, this, [this]() {
+        setBusy(false);
+        refreshDeviceList();
+    });
 }
 
 void MainWindow::onAutoRefreshTimeout()
@@ -979,6 +1253,8 @@ void MainWindow::setBusy(bool busy)
     baseAddressCombo_->setEnabled(!busy);
     iapVidEdit_->setEnabled(!busy && !binBaseAddressLocked_);
     iapPidEdit_->setEnabled(!busy && !binBaseAddressLocked_);
+    updateBootloaderActions();
+    updateIapButton();
 }
 
 void MainWindow::onStartUpgrade()
@@ -1011,8 +1287,14 @@ void MainWindow::onStartUpgrade()
         return;
     }
 
+    startIapWorker(buildIapWorkerConfig(), false);
+}
+
+/** Describe the currently selected device, the way the worker will reach it */
+IapWorker::Config MainWindow::buildIapWorkerConfig() const
+{
     IapWorker::Config config;
-    config.firmwarePath = path;
+    config.firmwarePath = fileEdit_->text().trimmed();
     config.binBaseAddress = binBaseAddress();
     config.iapVid = iapVid();
     config.iapPid = iapPid();
@@ -1025,22 +1307,30 @@ void MainWindow::onStartUpgrade()
     config.serialPort = appDevice_.comPort;
     config.deviceBusy = (deviceMode_ == DeviceMode::DeviceBusy) || appDevice_.busy;
     config.hidWaitSeconds = 15;
+    return config;
+}
 
+/** Clear the log, show what is about to happen and run the worker */
+void MainWindow::startIapWorker(const IapWorker::Config &config, bool iapOnly)
+{
     logView_->clear();
     progressBar_->setValue(0);
     progressState_ = ProgressState::Running;
     progressLabel_->setText(tr("Preparing ..."));
+    iapOnlyRun_ = iapOnly;
     setBusy(true);
 
     if (deviceMode_ == DeviceMode::IapBootloader) {
         appendLog(tr("Target device: IAP HID (VID:0x%1 PID:0x%2)")
                       .arg(config.iapVid, 4, 16, QChar('0'))
                       .arg(config.iapPid, 4, 16, QChar('0')));
+    } else if (config.viaSerial) {
+        appendLog(tr("Target device: serial (COM port %1)").arg(config.serialPort));
     } else if (config.viaLibusb) {
         appendLog(tr("Target device: libusb (bus %1, address %2)")
                       .arg(config.libusbBus).arg(config.libusbAddress));
     } else {
-        appendLog(tr("Target device: CH375 #%1").arg(appDeviceIndex_));
+        appendLog(tr("Target device: CH375 #%1").arg(config.ch375Index));
     }
 
     worker_ = new IapWorker(config);
@@ -1053,7 +1343,7 @@ void MainWindow::onStartUpgrade()
     connect(worker_, &IapWorker::finished, this, &MainWindow::onUpgradeFinished);
     connect(worker_, &IapWorker::finished, worker_, &IapWorker::deleteLater);
     connect(worker_, &IapWorker::finished, workerThread_, &QThread::quit);
-    connect(workerThread_, &QThread::finished, workerThread_, &QThread::deleteLater);
+    connect(workerThread_, &QThread::finished, workerThread_, &QObject::deleteLater);
 
     workerThread_->start();
 }
@@ -1074,6 +1364,29 @@ void MainWindow::onUpgradeFinished(bool success, const QString &message)
     setBusy(false);
     worker_ = nullptr;
     workerThread_ = nullptr;
+
+    /* The "reboot into IAP" button only switches the board over - it did not
+       download anything, so it must not claim the firmware was upgraded */
+    if (iapOnlyRun_) {
+        const bool enteredIap = success;
+        iapOnlyRun_ = false;
+
+        if (enteredIap) {
+            progressState_ = ProgressState::Succeeded;
+            progressLabel_->setText(tr("Device is in IAP Mode"));
+            appendLog(message);
+            QTimer::singleShot(500, this, &MainWindow::onRefreshDevices);
+        } else {
+            progressState_ = ProgressState::Failed;
+            progressLabel_->setText(tr("Failed"));
+            appendLog(message, true);
+            appendLog(tr("Please power-cycle the device (disconnect and reconnect "
+                         "the USB cable or the power supply) and run the upgrade again."),
+                      true);
+            QMessageBox::critical(this, tr("Failed"), message);
+        }
+        return;
+    }
 
     if (success) {
         progressBar_->setValue(100);
@@ -1197,10 +1510,15 @@ void MainWindow::showAbout()
            "<a href='https://www.gnu.org/licenses/gpl-3.0.html'>"
            "https://www.gnu.org/licenses/gpl-3.0.html</a></p>"
            "<p>Built with Qt %2, statically compiled with MSYS2 (MINGW64).</p>"
-           "<p>Upgrade sequence: the enter-IAP command is sent over the CH375 "
-           "channel, the device resets into a HID IAP device, then erase / "
-           "program / verify / finish.</p>"
-           "<p>The CH375 driver must be installed.</p>")
+           "<p>Upgrade sequence: the enter-IAP command goes out over whichever "
+           "USB channel the board is on - CH375, libusb / WinUSB, or the COM "
+           "port of the USB-to-UART firmware. The board then resets into a HID "
+           "IAP device, followed by erase / program / verify / finish.</p>"
+           "<p>A board that already sits in IAP mode can also be rebooted into "
+           "its active slot, or switched to another APP slot, without "
+           "downloading anything.</p>"
+           "<p>Windows needs one driver for the board: the WCH CH375 driver, or "
+           "WinUSB when the board is bound to libusb.</p>")
             .arg(QApplication::applicationVersion())
             .arg(QString::fromLatin1(qVersion())));
     box.setTextFormat(Qt::RichText);
