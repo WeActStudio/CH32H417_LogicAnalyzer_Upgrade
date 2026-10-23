@@ -1,12 +1,12 @@
 /*
  * CH32H417 Logic Analyzer firmware upgrade tool
  *
- * Unit test for the UI language: verifies the compiled translation and the
+ * Unit test for the UI language: verifies the compiled translations and the
  * language selection logic.
  *
  * English is the source language of every UI string, so in English mode the
- * translated text must be identical to the source text, and in Chinese mode it
- * must come from translations/app_zh_CN.ts.
+ * translated text must be identical to the source text, and every other
+ * language must come from translations/app_<lang>.ts.
  *
  * Copyright (C) 2026 WeAct Studio
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -71,28 +71,83 @@ int main(int argc, char *argv[])
               == QString::fromUtf8("编程 FLASH ... 50%"),
           "Programming FLASH ... %1% -> 编程 FLASH ... 50%");
 
-    /* ---------- 3. Follow the system ---------- */
+    /* ---------- 3. Russian ---------- */
+    std::printf("== Russian ==\n");
+    LanguageManager::instance()->setPreference(LanguageManager::Preference::Russian);
+    CHECK(LanguageManager::instance()->languageCode() == "ru", "languageCode() == ru");
+    CHECK(T("MainWindow", "Device") == QString::fromUtf8("Устройство"),
+          "Device -> Устройство");
+    CHECK(T("MainWindow", "Ready") == QString::fromUtf8("Готово"), "Ready -> Готово");
+    CHECK(T("IapWorker", "Programming FLASH ... %1%").arg(50)
+              == QString::fromUtf8("Программирование FLASH ... 50%"),
+          "Programming FLASH ... %1% -> Программирование FLASH ... 50%");
+
+    /* ---------- 4. German ---------- */
+    std::printf("== German ==\n");
+    LanguageManager::instance()->setPreference(LanguageManager::Preference::German);
+    CHECK(LanguageManager::instance()->languageCode() == "de", "languageCode() == de");
+    CHECK(T("MainWindow", "Device") == QString::fromUtf8("Gerät"), "Device -> Gerät");
+    CHECK(T("MainWindow", "Ready") == QString::fromUtf8("Bereit"), "Ready -> Bereit");
+    CHECK(T("IapWorker", "Programming FLASH ... %1%").arg(50)
+              == QString::fromUtf8("FLASH wird beschrieben ... 50%"),
+          "Programming FLASH ... %1% -> FLASH wird beschrieben ... 50%");
+
+    /* ---------- 5. Spanish ---------- */
+    std::printf("== Spanish ==\n");
+    LanguageManager::instance()->setPreference(LanguageManager::Preference::Spanish);
+    CHECK(LanguageManager::instance()->languageCode() == "es", "languageCode() == es");
+    CHECK(T("MainWindow", "Device") == QString::fromUtf8("Dispositivo"),
+          "Device -> Dispositivo");
+    CHECK(T("MainWindow", "Ready") == QString::fromUtf8("Listo"), "Ready -> Listo");
+    CHECK(T("IapWorker", "Programming FLASH ... %1%").arg(50)
+              == QString::fromUtf8("Programando FLASH ... 50%"),
+          "Programming FLASH ... %1% -> Programando FLASH ... 50%");
+
+    /* ---------- 6. Follow the system ---------- */
     std::printf("== Auto ==\n");
     LanguageManager::instance()->setPreference(LanguageManager::Preference::Auto);
     const LanguageManager::Language autoLang =
         LanguageManager::instance()->resolvedLanguage();
-    const bool systemIsChinese = QLocale::system().language() == QLocale::Chinese
-                                 || QLocale::system().name().startsWith("zh", Qt::CaseInsensitive);
-    const LanguageManager::Language expected =
-        systemIsChinese ? LanguageManager::Language::ChineseSimplified
-                        : LanguageManager::Language::English;
+
+    LanguageManager::Language expected = LanguageManager::Language::English;
+    switch (QLocale::system().language()) {
+    case QLocale::Chinese:
+        expected = LanguageManager::Language::ChineseSimplified;
+        break;
+    case QLocale::Russian:
+        expected = LanguageManager::Language::Russian;
+        break;
+    case QLocale::German:
+        expected = LanguageManager::Language::German;
+        break;
+    case QLocale::Spanish:
+        expected = LanguageManager::Language::Spanish;
+        break;
+    default:
+        break;
+    }
+
     CHECK(autoLang == expected,
           qPrintable(QString("Auto resolves to %1 (system %2)")
                          .arg(LanguageManager::instance()->languageCode())
                          .arg(QLocale::system().name())));
 
-    /* Unsupported languages must fall back to English: verified on a
-       non-Chinese system */
-    if (!systemIsChinese)
-        CHECK(LanguageManager::instance()->languageCode() == "en", "non-Chinese system falls back to English");
+    /* Unsupported languages must fall back to English: verified on a system
+       language that is not one of the five */
+    const bool systemIsSupported =
+        QLocale::system().language() == QLocale::Chinese
+        || QLocale::system().language() == QLocale::English
+        || QLocale::system().language() == QLocale::Russian
+        || QLocale::system().language() == QLocale::German
+        || QLocale::system().language() == QLocale::Spanish;
+    if (!systemIsSupported)
+        CHECK(LanguageManager::instance()->languageCode() == "en",
+              "unsupported system language falls back to English");
 
-    /* ---------- 4. Menu entries complete ---------- */
-    CHECK(LanguageManager::preferenceNames().size() == 3, "3 language options");
+    /* ---------- 7. Menu entries complete ---------- */
+    CHECK(LanguageManager::preferenceNames().size() == 6, "6 language options");
+    CHECK(!LanguageManager::instance()->languageDisplayName().isEmpty(),
+          "language display name is set");
 
     std::printf("\npassed: %d  failed: %d\n", g_passed, g_failed);
     if (g_failed == 0)

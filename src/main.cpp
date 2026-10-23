@@ -23,6 +23,29 @@
 #include "languagemanager.h"
 #include "thememanager.h"
 
+namespace {
+
+/** Map a --lang / --autoswitch value onto a preference; Auto on anything else */
+LanguageManager::Preference preferenceFromCode(const QString &code)
+{
+    const QString value = code.toLower();
+
+    if (value == QLatin1String("en"))
+        return LanguageManager::Preference::English;
+    if (value == QLatin1String("zh_cn") || value == QLatin1String("zh"))
+        return LanguageManager::Preference::ChineseSimplified;
+    if (value == QLatin1String("ru"))
+        return LanguageManager::Preference::Russian;
+    if (value == QLatin1String("de"))
+        return LanguageManager::Preference::German;
+    if (value == QLatin1String("es"))
+        return LanguageManager::Preference::Spanish;
+
+    return LanguageManager::Preference::Auto;
+}
+
+} // namespace
+
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
@@ -69,8 +92,8 @@ int main(int argc, char *argv[])
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/logo")));
 
     /*
-     * UI language: English is the source language of every string, the Chinese
-     * text comes from the compiled app_zh_CN.qm. The UI follows the system
+     * UI language: English is the source language of every string, the other
+     * languages come from the compiled app_<lang>.qm. The UI follows the system
      * language by default and falls back to English for anything else.
      * The user can switch languages in the "Language" menu; the choice is
      * remembered and takes effect immediately.
@@ -78,7 +101,7 @@ int main(int argc, char *argv[])
      */
     LanguageManager *langMgr = LanguageManager::instance();
 
-    /* Command line override: --lang=en | --lang=zh_CN | --lang=auto */
+    /* Command line override: --lang=en | zh_CN | ru | de | es | auto */
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (!arg.startsWith(QLatin1String("--lang")))
@@ -88,13 +111,7 @@ int main(int argc, char *argv[])
                                   ? arg.section(QLatin1Char('='), 1)
                                   : (i + 1 < argc ? QString::fromLocal8Bit(argv[++i]) : QString());
 
-        if (value.compare(QLatin1String("en"), Qt::CaseInsensitive) == 0)
-            langMgr->setPreference(LanguageManager::Preference::English);
-        else if (value.compare(QLatin1String("zh_CN"), Qt::CaseInsensitive) == 0
-                 || value.compare(QLatin1String("zh"), Qt::CaseInsensitive) == 0)
-            langMgr->setPreference(LanguageManager::Preference::ChineseSimplified);
-        else
-            langMgr->setPreference(LanguageManager::Preference::Auto);
+        langMgr->setPreference(preferenceFromCode(value));
         break;
     }
     langMgr->apply();
@@ -173,21 +190,15 @@ int main(int argc, char *argv[])
         break;
     }
 
-    /* Automation helper: --autoswitch=en|zh_CN switches the language after the
-     * window is shown (simulates the menu action) */
+    /* Automation helper: --autoswitch=en|zh_CN|ru|de|es switches the language
+     * after the window is shown (simulates the menu action) */
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (!arg.startsWith(QLatin1String("--autoswitch=")))
             continue;
-        const QString value = arg.section(QLatin1Char('='), 1).toLower();
+        const QString value = arg.section(QLatin1Char('='), 1);
         QTimer::singleShot(1200, &window, [value]() {
-            LanguageManager *mgr = LanguageManager::instance();
-            if (value == QLatin1String("en"))
-                mgr->setPreference(LanguageManager::Preference::English);
-            else if (value == QLatin1String("zh_cn") || value == QLatin1String("zh"))
-                mgr->setPreference(LanguageManager::Preference::ChineseSimplified);
-            else
-                mgr->setPreference(LanguageManager::Preference::Auto);
+            LanguageManager::instance()->setPreference(preferenceFromCode(value));
         });
         break;
     }

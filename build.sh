@@ -38,8 +38,11 @@ EXE_NAME="CH32H417 Logic Analyzer Upgrade.exe"
 CLI_PRO_FILE="CH32H417_LogicAnalyzer_Upgrade_CLI.pro"
 CLI_EXE_NAME="CH32H417 Logic Analyzer Upgrade CLI.exe"
 
-BUILD_DIR="${SCRIPT_DIR}/build"
-CLI_BUILD_DIR="${SCRIPT_DIR}/build-cli"
+# Build output directory: set U3_BUILD_DIR to keep the artifacts out of the
+# source tree (e.g. U3_BUILD_DIR=/i/la_build ./build.sh)
+BUILD_ROOT="${U3_BUILD_DIR:-${SCRIPT_DIR}}"
+BUILD_DIR="${BUILD_ROOT}/build"
+CLI_BUILD_DIR="${BUILD_ROOT}/build-cli"
 
 # qmake of the MSYS2 static Qt installation.
 #
@@ -68,16 +71,19 @@ if [ -d "${QT_BIN_DIR}/../share/qt6/mkspecs/win32-g++" ]; then
 fi
 
 # ----------------------------------------------------------------------------
-#  Build the Simplified Chinese translation
+#  Build the UI translations (zh_CN, ru, de, es)
 #
-#  English is the source language of every tr() string, so only app_zh_CN.ts
-#  is needed:
-#    lupdate      extracts the tr() strings  -> translations/app_zh_CN.ts
+#  English is the source language of every tr() string, so every target only
+#  needs a translation of the English text:
+#    lupdate      extracts the tr() strings  -> translations/app_<lang>.ts
+#                 (the list comes from TRANSLATIONS in the .pro)
 #    i18n_fill.py fills in the translations (needs python; without it the .ts
 #                 committed in the repository is reused)
-#    lrelease     compiles .ts -> src/translations/app_zh_CN.qm, packed into
+#    lrelease     compiles .ts -> src/translations/app_<lang>.qm, packed into
 #                 the executable through src/translations.qrc
 # ----------------------------------------------------------------------------
+TS_LANGS="zh_CN ru de es"
+
 generate_translations()
 {
     local ts_dir="${SCRIPT_DIR}/translations"
@@ -93,25 +99,29 @@ generate_translations()
         PYTHON_BIN=""
     fi
 
-    # On Qt6 lupdate no longer accepts a .pro argument, lupdate-pro is needed
-    if [ -x "${QT_BIN_DIR}/lupdate-pro" ]; then
-        LUPDATE_BIN="${QT_BIN_DIR}/lupdate-pro"
-    else
-        LUPDATE_BIN="${QT_BIN_DIR}/lupdate"
-    fi
+    # lupdate-pro cannot evaluate this .pro against a static Qt installation
+    # ("Failed to generate project description"), so the sources are scanned
+    # directly instead: same result, and it also picks up new tr() strings.
+    LUPDATE_BIN="${QT_BIN_DIR}/lupdate"
 
     if [ -n "${PYTHON_BIN}" ] && [ -x "${LUPDATE_BIN}" ]; then
-        echo "==> Updating the translation source (lupdate) ..."
-        ( cd "${SCRIPT_DIR}" && "${LUPDATE_BIN}" -no-obsolete "${PRO_FILE}" ) \
+        echo "==> Updating the translation sources (lupdate) ..."
+        TS_FILES=""
+        for lang in ${TS_LANGS}; do
+            TS_FILES="${TS_FILES} translations/app_${lang}.ts"
+        done
+        ( cd "${SCRIPT_DIR}" && "${LUPDATE_BIN}" src -no-obsolete -ts ${TS_FILES} ) \
             || echo "Warning: lupdate failed, keeping the existing .ts"
         "${PYTHON_BIN}" "${SCRIPT_DIR_WIN}/tools/i18n_fill.py" "${SCRIPT_DIR_WIN}"
     else
         echo "==> Skipping lupdate (python missing), using the existing .ts"
     fi
 
-    echo "==> Compiling the translation (lrelease) ..."
-    "${QT_BIN_DIR}/lrelease" "${SCRIPT_DIR_WIN}/translations/app_zh_CN.ts" \
-        -qm "${SCRIPT_DIR_WIN}/src/translations/app_zh_CN.qm"
+    echo "==> Compiling the translations (lrelease) ..."
+    for lang in ${TS_LANGS}; do
+        "${QT_BIN_DIR}/lrelease" "${SCRIPT_DIR_WIN}/translations/app_${lang}.ts" \
+            -qm "${SCRIPT_DIR_WIN}/src/translations/app_${lang}.qm"
+    done
 
     # An updated .qm does not retrigger rcc, touch the qrc so it is repacked
     touch "${SCRIPT_DIR}/src/translations.qrc"
@@ -144,6 +154,25 @@ purge_if_qt_changed()
     fi
     mkdir -p "${dir}"
     echo "${now}" > "${stamp}"
+    seed_qmake_stash "${dir}"
+}
+
+# qmake probes the compiler through the Windows command processor and can fail
+# there with "Variable QMAKE_CXX.COMPILER_MACROS is not defined". The probe
+# result is cached in .qmake.stash, so reuse the one of an existing build
+# directory instead of probing again.
+seed_qmake_stash()
+{
+    local dir="$1" src
+    [ -f "${dir}/.qmake.stash" ] && return 0
+
+    for src in "${SCRIPT_DIR}/build/.qmake.stash" "${SCRIPT_DIR}/build-cli/.qmake.stash"; do
+        [ "${src}" = "${dir}/.qmake.stash" ] && continue
+        if [ -f "${src}" ]; then
+            cp -f "${src}" "${dir}/.qmake.stash"
+            return 0
+        fi
+    done
 }
 
 if [ "$1" = "clean" ]; then

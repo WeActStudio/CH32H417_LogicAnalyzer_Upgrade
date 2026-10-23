@@ -28,6 +28,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QComboBox>
+#include <QAbstractItemView>
 #include <QProgressBar>
 #include <QTextEdit>
 #include <QFileDialog>
@@ -98,6 +99,28 @@ QString deviceKey(const Ch375DeviceInfo &info)
     return QStringLiteral("%1#%2").arg(info.channelName()).arg(info.index);
 }
 
+/*
+ * Identity of a board for keeping a list selection: the USB serial number when
+ * there is one, because it survives a re-plug while the channel index does
+ * not. Falls back to deviceKey() for devices without a serial number.
+ */
+QString selectionKey(const Ch375DeviceInfo &info)
+{
+    if (!info.serial.isEmpty())
+        return QStringLiteral("sn#%1").arg(info.serial);
+    return deviceKey(info);
+}
+
+/*
+ * Stricter than deviceKey(): the default constructed info has index -1 on the
+ * CH375 channel, so a bare key would call it equal to a real device.
+ */
+bool sameDevice(const Ch375DeviceInfo &a, const Ch375DeviceInfo &b)
+{
+    return a.isIap == b.isIap && deviceKey(a) == deviceKey(b)
+        && a.vid == b.vid && a.pid == b.pid && a.name == b.name;
+}
+
 MainWindow *g_mainWindow = nullptr;
 
 /* Bridge the internal CH375 DLL log onto the UI (may be called from a worker
@@ -125,6 +148,7 @@ MainWindow::MainWindow(QWidget *parent)
     , deviceStatusLabel_(nullptr)
     , deviceVersionLabel_(nullptr)
     , autoRefreshTimer_(nullptr)
+    , iapOnlyRun_(false)
     , fileEdit_(nullptr)
     , browseButton_(nullptr)
     , firmwareInfoLabel_(nullptr)
@@ -132,7 +156,6 @@ MainWindow::MainWindow(QWidget *parent)
     , baseAddressHintLabel_(nullptr)
     , binBaseAddressLocked_(false)
     , binBaseAddressValue_(0x08006000u)
-    , iapOnlyRun_(false)
     , iapVidEdit_(nullptr)
     , iapPidEdit_(nullptr)
     , progressBar_(nullptr)
@@ -779,6 +802,24 @@ void MainWindow::updateV2Lock()
 
 void MainWindow::refreshDeviceList()
 {
+    /* Never rebuild the model while the popup is open: clearing it closes the
+       popup mid-click, so a pick from the list was lost every few seconds. */
+    if (deviceCombo_->view() && deviceCombo_->view()->isVisible())
+        return;
+
+    /*
+     * The list is rebuilt from scratch on every refresh tick, so the row the
+     * user picked has to be remembered by identity - the row number alone would
+     * point at a different board after the list is rebuilt, and without this
+     * the selection jumped back to the first entry on every refresh, which made
+     * a second board impossible to pick. Read the key before the detect below
+     * replaces devices_.
+     */
+    QString keepKey;
+    const int keepRow = deviceCombo_->currentIndex();
+    if (keepRow >= 0 && keepRow < devices_.size())
+        keepKey = selectionKey(devices_.at(keepRow));
+
     QString error;
     const DeviceMode mode = ch375dev_detect(CH32H417_APP_VID, CH32H417_APP_PID,
                                             iapVid(), iapPid(),
@@ -802,9 +843,19 @@ void MainWindow::refreshDeviceList()
             deviceCombo_->setItemData(deviceCombo_->count() - 1, full, Qt::ToolTipRole);
         }
         deviceCombo_->setEnabled(true);
-        const int cur = deviceCombo_->currentIndex();
-        deviceCombo_->setToolTip(
-            cur >= 0 ? deviceCombo_->itemData(cur, Qt::ToolTipRole).toString() : QString());
+
+        /* Put the board the user had selected back, fall back to the first */
+        int row = 0;
+        for (int i = 0; i < devices_.size(); ++i) {
+            if (selectionKey(devices_.at(i)) == keepKey) {
+                row = i;
+                break;
+            }
+        }
+        deviceCombo_->setCurrentIndex(row);
+
+        const QString tip = deviceCombo_->itemData(row, Qt::ToolTipRole).toString();
+        deviceCombo_->setToolTip(tip.isEmpty() ? deviceCombo_->itemText(row) : tip);
     }
 
     /*
@@ -815,6 +866,18 @@ void MainWindow::refreshDeviceList()
     updateV2Lock();
 
     deviceCombo_->blockSignals(false);
+
+    /*
+     * The combo was rebuilt with signals blocked, so the restored row has to be
+     * applied by hand. detect() always reports the first application device, so
+     * without this the highlight would show one board while the tool programs
+     * another. Compared by identity, not row: re-plugging can reorder the list
+     * while the same row still points at a different board.
+     */
+    const int newRow = deviceCombo_->currentIndex();
+    if (newRow >= 0 && newRow < devices_.size()
+        && !sameDevice(devices_.at(newRow), appDevice_))
+        onDeviceIndexChanged(newRow);
 
     switch (mode) {
     case DeviceMode::AppRunning: {
@@ -833,7 +896,8 @@ void MainWindow::refreshDeviceList()
             versionValid_ = false;
             versionQueriedKey_ = key;
             deviceDetectError_.clear();
-        } else if (key != versionQueriedKey_ || !versionValid_) {
+        } else if (!appDevice_.isIap && !appDevice_.busy
+                   && (key != versionQueriedKey_ || !versionValid_)) {
             versionValid_ = ch375dev_get_version_for(appDevice_, swVersion_, hwVersion_, error);
             if (versionValid_) {
                 versionQueriedKey_ = key;

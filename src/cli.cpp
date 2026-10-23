@@ -62,6 +62,7 @@ struct CliOptions
     bool verbose = false;
     bool preferLibusb = false;   /* Use the libusb / WinUSB channel when both can see the board */
     bool reboot = false;         /* Reboot the board into its active slot */
+    bool enterIap = false;       /* Reboot the application into the bootloader */
     int slotSwitch = -1;         /* Switch to this APP slot, -1 = do not switch */
 
     QString firmware;
@@ -459,6 +460,8 @@ void printUsage(FILE *stream)
         "\n"
         "Other commands:\n"
         "  -l, --list               List the attached devices and exit\n"
+        "      --enter-iap          Reboot a board that runs the application into its\n"
+        "                           bootloader (no firmware needed)\n"
         "      --reboot             Reboot a board that sits in IAP mode into its\n"
         "                           active slot (no firmware needed)\n"
         "      --slot <0|1|2>       Make another APP slot active and boot it\n"
@@ -571,6 +574,10 @@ bool parseArgs(const QStringList &args, CliOptions &opt, QString &error)
         }
         if (arg == QLatin1String("--reboot")) {
             opt.reboot = true;
+            continue;
+        }
+        if (arg == QLatin1String("--enter-iap")) {
+            opt.enterIap = true;
             continue;
         }
         if (arg == QLatin1String("--slot") || arg.startsWith(QLatin1String("--slot="))) {
@@ -955,6 +962,85 @@ int cliForwardToConsoleApp(const QStringList &args)
 #endif
 }
 
+/* Worker parameters that an upgrade and a plain IAP switch have in common */
+IapWorker::Config makeWorkerConfig(const CliOptions &opt, const Ch375DeviceInfo &device)
+{
+    IapWorker::Config config;
+    config.binBaseAddress = opt.binBase;
+    config.iapVid = opt.iapVid;
+    config.iapPid = opt.iapPid;
+    config.alreadyInIap = device.isIap;
+    config.ch375Index = (!device.isIap && !device.viaLibusb() && !device.viaSerial()) ? device.index : -1;
+    config.viaLibusb = !device.isIap && device.viaLibusb();
+    config.libusbBus = device.bus;
+    config.libusbAddress = device.address;
+    config.viaSerial = !device.isIap && device.viaSerial();
+    config.serialPort = device.comPort;
+    config.deviceBusy = device.busy;
+    config.hidWaitSeconds = opt.waitSeconds;
+    return config;
+}
+
+/* Run a worker on its own thread and print its log and progress as they come */
+bool runIapWorker(const IapWorker::Config &config, bool quiet, QString &resultMessage)
+{
+    IapWorker *worker = new IapWorker(config);
+    QThread *thread = new QThread;
+    worker->moveToThread(thread);
+
+    /* Context object living in this thread: the lambdas below run here, so
+       stdout is only touched from one thread. */
+    QObject context;
+
+    bool success = false;
+    QString lastStatus;
+
+    QObject::connect(thread, &QThread::started, worker, &IapWorker::run);
+    QObject::connect(worker, &IapWorker::logMessage, &context,
+                     [&](const QString &message) {
+                         if (!quiet)
+                             printLine(message);
+                     });
+    QObject::connect(worker, &IapWorker::progressUpdated, &context,
+                     [&](int percent, const QString &status) {
+                         /*
+                          * The printed progress is the percentage inside the
+                          * current step (Programming / Verifying FLASH), which
+                          * the worker rounds down to a multiple of 10: printing
+                          * it whenever the text changes gives one line every
+                          * 10% instead of one line per transferred block. The
+                          * number in front of it is the progress of the whole
+                          * upgrade.
+                          */
+                         if (status == lastStatus)
+                             return;
+
+                         lastStatus = status;
+                         printLine(QStringLiteral("[%1%] %2")
+                                       .arg(percent, 3)
+                                       .arg(status));
+                     });
+    QObject::connect(worker, &IapWorker::finished, &context,
+                     [&](bool ok, const QString &message) {
+                         success = ok;
+                         resultMessage = message;
+                         thread->quit();
+                     });
+
+    QEventLoop loop;
+    QObject::connect(thread, &QThread::finished, &loop, &QEventLoop::quit);
+
+    thread->start();
+    loop.exec();
+    thread->wait();
+
+    delete worker;
+    delete thread;
+
+    ch375_set_log_func(nullptr);
+    return success;
+}
+
 /* Runs the command line mode, cliRun() only adds the console clean-up */
 int cliRunImpl(const QStringList &args);
 
@@ -1037,6 +1123,39 @@ int cliRunImpl(const QStringList &args)
     if (opt.list) {
         printDeviceList(devices);
         return devices.isEmpty() ? kExitNoDevice : kExitOk;
+    }
+
+    /* ---------------------------------------------------------------------
+     * Bootloader control: reboot the running application into the bootloader
+     * --------------------------------------------------------------------- */
+    if (opt.enterIap) {
+        Ch375DeviceInfo device;
+        if (selectDevice(devices, opt.device, opt.preferLibusb, device) != 0) {
+            printError(QStringLiteral("Error: no CH32H417 device in application mode found"));
+            printDeviceList(devices);
+            return kExitNoDevice;
+        }
+
+        if (device.isIap) {
+            printLine(QStringLiteral("OK: the device is already in IAP mode"));
+            return kExitOk;
+        }
+
+        if (!opt.quiet)
+            printLine(QStringLiteral("Rebooting the device into IAP mode ..."));
+
+        IapWorker::Config config = makeWorkerConfig(opt, device);
+        config.onlyEnterIap = true;
+
+        QString resultMessage;
+        const bool success = runIapWorker(config, opt.quiet, resultMessage);
+        if (success) {
+            printLine(QStringLiteral("OK: %1").arg(resultMessage));
+            return kExitOk;
+        }
+
+        printError(QStringLiteral("FAILED: %1").arg(resultMessage));
+        return kExitUpgradeFailed;
     }
 
     /* ---------------------------------------------------------------------
@@ -1144,76 +1263,11 @@ int cliRunImpl(const QStringList &args)
         printLine(QStringLiteral("Device   : %1").arg(device.description()));
     }
 
-    IapWorker::Config config;
+    IapWorker::Config config = makeWorkerConfig(opt, device);
     config.firmwarePath = fwInfo.absoluteFilePath();
-    config.binBaseAddress = opt.binBase;
-    config.iapVid = opt.iapVid;
-    config.iapPid = opt.iapPid;
-    config.alreadyInIap = device.isIap;
-    config.ch375Index = (!device.isIap && !device.viaLibusb() && !device.viaSerial()) ? device.index : -1;
-    config.viaLibusb = !device.isIap && device.viaLibusb();
-    config.libusbBus = device.bus;
-    config.libusbAddress = device.address;
-    config.viaSerial = !device.isIap && device.viaSerial();
-    config.serialPort = device.comPort;
-    config.deviceBusy = device.busy;
-    config.hidWaitSeconds = opt.waitSeconds;
 
-    IapWorker *worker = new IapWorker(config);
-    QThread *thread = new QThread;
-    worker->moveToThread(thread);
-
-    /* Context object living in this thread: the lambdas below run here, so
-       stdout is only touched from one thread. */
-    QObject context;
-
-    bool success = false;
     QString resultMessage;
-    QString lastStatus;
-
-    QObject::connect(thread, &QThread::started, worker, &IapWorker::run);
-    QObject::connect(worker, &IapWorker::logMessage, &context,
-                     [&](const QString &message) {
-                         if (!opt.quiet)
-                             printLine(message);
-                     });
-    QObject::connect(worker, &IapWorker::progressUpdated, &context,
-                     [&](int percent, const QString &status) {
-                         /*
-                          * The printed progress is the percentage inside the
-                          * current step (Programming / Verifying FLASH), which
-                          * the worker rounds down to a multiple of 10: printing
-                          * it whenever the text changes gives one line every
-                          * 10% instead of one line per transferred block. The
-                          * number in front of it is the progress of the whole
-                          * upgrade.
-                          */
-                         if (status == lastStatus)
-                             return;
-
-                         lastStatus = status;
-                         printLine(QStringLiteral("[%1%] %2")
-                                       .arg(percent, 3)
-                                       .arg(status));
-                     });
-    QObject::connect(worker, &IapWorker::finished, &context,
-                     [&](bool ok, const QString &message) {
-                         success = ok;
-                         resultMessage = message;
-                         thread->quit();
-                     });
-
-    QEventLoop loop;
-    QObject::connect(thread, &QThread::finished, &loop, &QEventLoop::quit);
-
-    thread->start();
-    loop.exec();
-    thread->wait();
-
-    delete worker;
-    delete thread;
-
-    ch375_set_log_func(nullptr);
+    const bool success = runIapWorker(config, opt.quiet, resultMessage);
 
     if (success) {
         printLine(QStringLiteral("OK: %1").arg(resultMessage));

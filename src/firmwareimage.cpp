@@ -28,11 +28,8 @@ struct HexChunk
 /* Maximum accepted image size, guards against a malformed HEX exhausting memory */
 const qint64 MAX_IMAGE_SIZE = 4 * 1024 * 1024;
 
-/* Translate helper: every message below is user visible */
-QString trText(const char *text)
-{
-    return QCoreApplication::translate("FirmwareImage", text);
-}
+/* Where the flash is mapped for the bootloader (and for a debugger) */
+const quint32 FLASH_BASE_ADDRESS = 0x08000000u;
 
 /* Convert one HEX text line into a byte sequence; false means malformed */
 bool hex_line_to_bytes(const QString &line, QByteArray &bytes)
@@ -87,12 +84,12 @@ bool parse_hex(const QByteArray &raw, FirmwareImage &image, QString &errorMessag
 
         QByteArray record;
         if (!hex_line_to_bytes(line, record)) {
-            errorMessage = trText("Invalid HEX file: cannot parse line %1").arg(lineNumber);
+            errorMessage = QCoreApplication::translate("FirmwareImage", "Invalid HEX file: cannot parse line %1").arg(lineNumber);
             return false;
         }
 
         if (record.size() < 5) {
-            errorMessage = trText("Invalid HEX file: line %1 is too short").arg(lineNumber);
+            errorMessage = QCoreApplication::translate("FirmwareImage", "Invalid HEX file: line %1 is too short").arg(lineNumber);
             return false;
         }
 
@@ -101,7 +98,7 @@ bool parse_hex(const QByteArray &raw, FirmwareImage &image, QString &errorMessag
         for (int i = 0; i < record.size(); ++i)
             sum = static_cast<quint8>(sum + static_cast<quint8>(record[i]));
         if (sum != 0) {
-            errorMessage = trText("HEX checksum error on line %1 (0x%2)")
+            errorMessage = QCoreApplication::translate("FirmwareImage", "HEX checksum error on line %1 (0x%2)")
                                .arg(lineNumber)
                                .arg(static_cast<unsigned>(sum), 2, 16, QChar('0'));
             return false;
@@ -109,7 +106,7 @@ bool parse_hex(const QByteArray &raw, FirmwareImage &image, QString &errorMessag
 
         const int byteCount = static_cast<quint8>(record[0]);
         if (record.size() < byteCount + 5) {
-            errorMessage = trText("Invalid HEX file: data length mismatch on line %1").arg(lineNumber);
+            errorMessage = QCoreApplication::translate("FirmwareImage", "Invalid HEX file: data length mismatch on line %1").arg(lineNumber);
             return false;
         }
 
@@ -163,16 +160,29 @@ bool parse_hex(const QByteArray &raw, FirmwareImage &image, QString &errorMessag
     }
 
     if (chunks.isEmpty()) {
-        errorMessage = trText("HEX file contains no valid data record");
+        errorMessage = QCoreApplication::translate("FirmwareImage", "HEX file contains no valid data record");
         return false;
     }
 
-    const qint64 size = static_cast<qint64>(maxAddress) -
-                        static_cast<qint64>(minAddress) + 1;
+    /*
+     * The WCH core linker scripts address the flash from 0 (V3F slot base
+     * 0x6000, V5F 0x20000), so a HEX built from them carries slot-relative
+     * addresses, while the bootloader only accepts absolute ones
+     * (0x08006000 and the other slot bases). A non-zero top byte means the
+     * file is already absolute - adding the base again would be fatal.
+     * The shift only moves the reported addresses: the byte offsets inside
+     * the image are unaffected.
+     */
+    const quint32 addressBase = ((minAddress & 0xFF000000u) == 0) ? FLASH_BASE_ADDRESS : 0u;
+    const quint32 imageStart = minAddress + addressBase;
+    const quint32 imageEnd = maxAddress + addressBase;
+
+    const qint64 size = static_cast<qint64>(imageEnd) -
+                        static_cast<qint64>(imageStart) + 1;
     if (size <= 0 || size > MAX_IMAGE_SIZE) {
-        errorMessage = trText("HEX address range out of bounds: 0x%1 - 0x%2")
-                           .arg(minAddress, 8, 16, QChar('0'))
-                           .arg(maxAddress, 8, 16, QChar('0'));
+        errorMessage = QCoreApplication::translate("FirmwareImage", "HEX address range out of bounds: 0x%1 - 0x%2")
+                           .arg(imageStart, 8, 16, QChar('0'))
+                           .arg(imageEnd, 8, 16, QChar('0'));
         return false;
     }
 
@@ -185,8 +195,8 @@ bool parse_hex(const QByteArray &raw, FirmwareImage &image, QString &errorMessag
     }
 
     image.data = buffer;
-    image.startAddress = minAddress;
-    image.endAddress = maxAddress;
+    image.startAddress = imageStart;
+    image.endAddress = imageEnd;
     image.fromHex = true;
     return true;
 }
@@ -209,7 +219,7 @@ bool firmware_load(const QString &path, quint32 binBaseAddress,
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        errorMessage = trText("Cannot open firmware file: %1").arg(path);
+        errorMessage = QCoreApplication::translate("FirmwareImage", "Cannot open firmware file: %1").arg(path);
         return false;
     }
 
@@ -217,7 +227,7 @@ bool firmware_load(const QString &path, quint32 binBaseAddress,
     file.close();
 
     if (raw.isEmpty()) {
-        errorMessage = trText("Firmware file is empty");
+        errorMessage = QCoreApplication::translate("FirmwareImage", "Firmware file is empty");
         return false;
     }
 
@@ -252,12 +262,12 @@ bool firmware_load(const QString &path, quint32 binBaseAddress,
 QString firmware_format_size(qint64 bytes)
 {
     if (bytes < 1024)
-        return trText("%1 B").arg(bytes);
+        return QCoreApplication::translate("FirmwareImage", "%1 B").arg(bytes);
     if (bytes < 1024 * 1024)
-        return trText("%1 KB (%2 bytes)")
+        return QCoreApplication::translate("FirmwareImage", "%1 KB (%2 bytes)")
             .arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 2)
             .arg(bytes);
-    return trText("%1 MB (%2 bytes)")
+    return QCoreApplication::translate("FirmwareImage", "%1 MB (%2 bytes)")
         .arg(static_cast<double>(bytes) / (1024.0 * 1024.0), 0, 'f', 2)
         .arg(bytes);
 }

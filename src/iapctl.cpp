@@ -29,11 +29,6 @@ const unsigned char kReportId = 0;
 const int kAckTimeoutMs = 2000;
 const int kAckPollMs = 20;
 
-QString trText(const char *text)
-{
-    return QCoreApplication::translate("IapCtl", text);
-}
-
 bool hid_ready()
 {
     static bool initialized = false;
@@ -55,7 +50,7 @@ bool readAck(hid_device *device, quint8 *errorCode, QString &errorMessage)
         const int result = ::hid_read(device, resp, sizeof(resp));
         if (result >= 2) {
             if (resp[0] != 0x00) {
-                errorMessage = trText("Unexpected answer from the bootloader: 0x%1")
+                errorMessage = QCoreApplication::translate("IapCtl", "Unexpected answer from the bootloader: 0x%1")
                                    .arg(static_cast<unsigned>(resp[0]), 2, 16, QChar('0'));
                 return false;
             }
@@ -66,7 +61,7 @@ bool readAck(hid_device *device, quint8 *errorCode, QString &errorMessage)
         Sleep(kAckPollMs);
     }
 
-    errorMessage = trText("The bootloader did not answer (timeout)");
+    errorMessage = QCoreApplication::translate("IapCtl", "The bootloader did not answer (timeout)");
     return false;
 }
 
@@ -80,13 +75,13 @@ bool sendCommand(quint16 vid, quint16 pid, quint8 command,
     errorMessage.clear();
 
     if (!hid_ready()) {
-        errorMessage = trText("Failed to initialize hidapi");
+        errorMessage = QCoreApplication::translate("IapCtl", "Failed to initialize hidapi");
         return false;
     }
 
     hid_device *device = ::hid_open(vid, pid, nullptr);
     if (!device) {
-        errorMessage = trText(
+        errorMessage = QCoreApplication::translate("IapCtl", 
             "No IAP device found (VID:0x%1 PID:0x%2).\n"
             "These commands only work while the board sits in the bootloader.")
                            .arg(vid, 4, 16, QChar('0'))
@@ -117,7 +112,7 @@ bool sendCommand(quint16 vid, quint16 pid, quint8 command,
     }
 
     if (!written) {
-        errorMessage = trText("Failed to send command 0x%1 to the bootloader")
+        errorMessage = QCoreApplication::translate("IapCtl", "Failed to send command 0x%1 to the bootloader")
                            .arg(static_cast<unsigned>(command), 2, 16, QChar('0'));
         ::hid_close(device);
         return false;
@@ -131,7 +126,7 @@ bool sendCommand(quint16 vid, quint16 pid, quint8 command,
         return false;
 
     if (errorCode != 0) {
-        errorMessage = trText("The bootloader refused the request (error code %1)")
+        errorMessage = QCoreApplication::translate("IapCtl", "The bootloader refused the request (error code %1)")
                            .arg(errorCode);
         return false;
     }
@@ -165,7 +160,7 @@ bool iapctl_reboot(quint16 vid, quint16 pid, QString &errorMessage)
 bool iapctl_set_slot(quint16 vid, quint16 pid, int slot, QString &errorMessage)
 {
     if (slot < 0 || slot >= IAP_APP_SLOT_NUM) {
-        errorMessage = trText("Slot number out of range (0..%1)").arg(IAP_APP_SLOT_NUM - 1);
+        errorMessage = QCoreApplication::translate("IapCtl", "Slot number out of range (0..%1)").arg(IAP_APP_SLOT_NUM - 1);
         return false;
     }
 

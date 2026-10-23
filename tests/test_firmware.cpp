@@ -132,6 +132,31 @@ int main(int argc, char **argv)
         check(!firmware_load(dir + "/no_such_file.bin", 0, img, err), "missing file rejected");
     }
 
+    /* ---------- Case 5: slot-relative HEX, as the WCH linker scripts emit ---------- */
+    {
+        /* No type 04 record: the records carry the slot offset 0x6000 only */
+        QByteArray a(8, '\x5A');
+
+        QStringList lines;
+        lines << hexRecord(0x6000, 0x00, a);
+        lines << QString(":00000001FF");
+
+        const QString path = dir + "/relative.hex";
+        writeFile(path, lines.join("\r\n").toLatin1());
+
+        FirmwareImage img;
+        QString err;
+        const bool ok = firmware_load(path, 0x08006000u, img, err);
+        check(ok, QString("relative HEX parsed (%1)").arg(err));
+        check(img.startAddress == 0x08006000u,
+              QString("relative HEX rebased, start = 0x%1")
+                  .arg(img.startAddress, 8, 16, QChar('0')));
+        check(img.endAddress == 0x08006007u,
+              QString("relative HEX rebased, end = 0x%1")
+                  .arg(img.endAddress, 8, 16, QChar('0')));
+        check(img.data.size() == 8, QString("relative HEX size = %1").arg(img.data.size()));
+    }
+
     printf("\n%s\n", failures == 0
                          ? "ALL TESTS PASSED"
                          : QString("%1 TEST(S) FAILED").arg(failures).toLocal8Bit().constData());

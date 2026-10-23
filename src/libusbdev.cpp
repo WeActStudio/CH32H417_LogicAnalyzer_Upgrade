@@ -39,11 +39,6 @@ QString libusbError(int code)
     return QString::fromLatin1(libusb_error_name(code));
 }
 
-QString trText(const char *text)
-{
-    return QCoreApplication::translate("LibusbDev", text);
-}
-
 /**
  * Look up an openable device by bus/address.
  *
@@ -85,7 +80,7 @@ bool openAndClaim(libusb_device *device, libusb_device_handle *&handle,
     const int openResult = libusb_open(device, &handle);
     if (openResult != LIBUSB_SUCCESS) {
         handle = nullptr;
-        errorMessage = trText("Cannot open the USB device (libusb error %1). "
+        errorMessage = QCoreApplication::translate("LibusbDev", "Cannot open the USB device (libusb error %1). "
                           "The board must be bound to a generic USB driver "
                           "(WinUSB on Windows) and must not be in use by "
                           "another program.")
@@ -100,7 +95,7 @@ bool openAndClaim(libusb_device *device, libusb_device_handle *&handle,
 
     const int claimResult = libusb_claim_interface(handle, USB_INTERFACE);
     if (claimResult != LIBUSB_SUCCESS) {
-        errorMessage = trText("Cannot claim the USB interface (libusb error %1). "
+        errorMessage = QCoreApplication::translate("LibusbDev", "Cannot claim the USB interface (libusb error %1). "
                           "Close other programs that use the device and try "
                           "again.")
                            .arg(libusbError(claimResult));
@@ -126,7 +121,7 @@ bool transfer(libusb_device_handle *handle, quint8 command,
                                       packet, static_cast<int>(sizeof(packet)),
                                       &transferred, USB_TIMEOUT_MS);
     if (result != LIBUSB_SUCCESS) {
-        errorMessage = trText("Failed to send command 0x%1 (libusb error %2)")
+        errorMessage = QCoreApplication::translate("LibusbDev", "Failed to send command 0x%1 (libusb error %2)")
                            .arg(static_cast<unsigned>(command), 2, 16, QChar('0'))
                            .arg(libusbError(result));
         return false;
@@ -142,7 +137,7 @@ bool transfer(libusb_device_handle *handle, quint8 command,
                                   resp, static_cast<int>(sizeof(resp)),
                                   &transferred, USB_TIMEOUT_MS);
     if (result != LIBUSB_SUCCESS) {
-        errorMessage = trText("The device did not answer command 0x%1 (libusb error %2)")
+        errorMessage = QCoreApplication::translate("LibusbDev", "The device did not answer command 0x%1 (libusb error %2)")
                            .arg(static_cast<unsigned>(command), 2, 16, QChar('0'))
                            .arg(libusbError(result));
         return false;
@@ -160,7 +155,7 @@ bool libusbdev_init(QString &errorMessage)
         return true;
 
     if (initFailed_) {
-        errorMessage = trText("libusb is not available");
+        errorMessage = QCoreApplication::translate("LibusbDev", "libusb is not available");
         return false;
     }
 
@@ -168,7 +163,7 @@ bool libusbdev_init(QString &errorMessage)
     if (result != LIBUSB_SUCCESS) {
         context_ = nullptr;
         initFailed_ = true;
-        errorMessage = trText("Unable to initialise libusb (error %1)").arg(libusbError(result));
+        errorMessage = QCoreApplication::translate("LibusbDev", "Unable to initialise libusb (error %1)").arg(libusbError(result));
         return false;
     }
 
@@ -200,7 +195,7 @@ QList<Ch375DeviceInfo> libusbdev_enum_devices(quint16 matchVid, quint16 matchPid
     libusb_device **devices = nullptr;
     const ssize_t count = libusb_get_device_list(context_, &devices);
     if (count < 0) {
-        errorMessage = trText("Failed to enumerate the USB devices (libusb error %1)")
+        errorMessage = QCoreApplication::translate("LibusbDev", "Failed to enumerate the USB devices (libusb error %1)")
                            .arg(libusbError(static_cast<int>(count)));
         return list;
     }
@@ -283,7 +278,7 @@ bool libusbdev_enter_iap(int bus, int address, QString &errorMessage)
 
     libusb_device *device = findDevice(bus, address);
     if (!device) {
-        errorMessage = trText("The device is no longer present (bus %1, address %2)")
+        errorMessage = QCoreApplication::translate("LibusbDev", "The device is no longer present (bus %1, address %2)")
                            .arg(bus).arg(address);
         return false;
     }
@@ -307,7 +302,7 @@ bool libusbdev_enter_iap(int bus, int address, QString &errorMessage)
 
     if (!sent) {
         if (errorMessage.isEmpty())
-            errorMessage = trText("Failed to send the enter-IAP-mode command");
+            errorMessage = QCoreApplication::translate("LibusbDev", "Failed to send the enter-IAP-mode command");
         return false;
     }
 
@@ -325,7 +320,7 @@ bool libusbdev_get_version(int bus, int address, quint8 &swVer, quint8 &hwVer,
 
     libusb_device *device = findDevice(bus, address);
     if (!device) {
-        errorMessage = trText("The device is no longer present (bus %1, address %2)")
+        errorMessage = QCoreApplication::translate("LibusbDev", "The device is no longer present (bus %1, address %2)")
                            .arg(bus).arg(address);
         return false;
     }
@@ -348,7 +343,7 @@ bool libusbdev_get_version(int bus, int address, quint8 &swVer, quint8 &hwVer,
         return false;
 
     if (response[0] != (CMD_GET_VERSION | CMD_RETURN_PARA)) {
-        errorMessage = trText("Unexpected version response: 0x%1")
+        errorMessage = QCoreApplication::translate("LibusbDev", "Unexpected version response: 0x%1")
                            .arg(static_cast<unsigned>(response[0]), 2, 16, QChar('0'));
         return false;
     }

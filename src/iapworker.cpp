@@ -161,7 +161,7 @@ bool IapWorker::hidWrite(const quint8 *data, int len)
     return false;
 }
 
-bool IapWorker::hidRead(quint8 *data, int len, int timeoutMs)
+bool IapWorker::hidRead(quint8 *data, int len, int timeoutMs, bool reportFailure)
 {
     if (!hidHandle_)
         return false;
@@ -189,8 +189,12 @@ bool IapWorker::hidRead(quint8 *data, int len, int timeoutMs)
             continue;
         }
 
-        log(tr("HID read failed: %1")
-                .arg(hid_error_string(static_cast<hid_device *>(hidHandle_))));
+        /* hidapi says "Success" when the device just vanished, which reads like
+         * a contradiction - the finish step expects that and stays quiet */
+        if (reportFailure) {
+            log(tr("HID read failed: %1")
+                    .arg(hid_error_string(static_cast<hid_device *>(hidHandle_))));
+        }
         return false;
     }
 
@@ -466,7 +470,7 @@ bool IapWorker::endUpgrade()
     /* The firmware resets and jumps immediately after END, so a reply is unusual */
     quint8 resp[IAP_DATA_LEN];
     std::memset(resp, 0, sizeof(resp));
-    if (hidRead(resp, 2, 2000)) {
+    if (hidRead(resp, 2, 2000, false)) {
         if (resp[0] == CMD_JUMP_IAP)
             log(tr("Device confirmed the upgrade"));
     } else {

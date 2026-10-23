@@ -91,7 +91,7 @@ private:
     bool openHid(int waitSeconds);
     void closeHid();
     bool hidWrite(const quint8 *data, int len);
-    bool hidRead(quint8 *data, int len, int timeoutMs);
+    bool hidRead(quint8 *data, int len, int timeoutMs, bool reportFailure = true);
 
     /* IAP sequence */
     bool enterIapMode();
