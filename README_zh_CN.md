@@ -22,7 +22,7 @@ libusb / 串口）自动识别，可单独升级某个 APP 槽，也可在一次
 
 ## 快速上手
 
-![主界面：已连接板子并选好固件，等待升级](shot_light_zh.png)
+![主界面](docs/images/gui-zh.png)
 
 1. 连接逻辑分析仪，运行程序，点 **刷新** 确认设备已识别。
 2. 选择或直接拖入 `.hex` / `.bin` 固件（V2 上 .bin 的槽位由下拉框选择，
@@ -32,6 +32,12 @@ libusb / 串口）自动识别，可单独升级某个 APP 槽，也可在一次
 
 > 设备已处于 IAP 模式（例如按住 KEY 上电，只显示 HID 设备）时，程序会自动识别
 > 并跳过「进入 IAP」这一步。
+
+## 下载
+
+已编译的发布包在 [Releases](https://github.com/WeActStudio/CH32H417_LogicAnalyzer_Upgrade/releases)
+页面：Windows 10 / 11 64 位，解压即用，无需安装 Qt 或其它运行时。压缩包内含图形
+界面版、控制台版、两个 CH375 驱动 DLL，以及本说明与许可证。
 
 ## APP 槽与引导程序控制
 

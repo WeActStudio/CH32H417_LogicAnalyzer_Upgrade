@@ -28,7 +28,7 @@ writes all slots in one bootloader session.
 
 ## Quick start
 
-![Main window: board connected, firmware selected, ready to upgrade](shot_light_en.png)
+![Main window](docs/images/gui-en.png)
 
 1. Connect the analyzer, start the program and click **Refresh** to confirm the
    board is listed.
@@ -41,6 +41,13 @@ writes all slots in one bootloader session.
 
 > A board that is already in IAP mode (for example powered on with KEY held, so it
 > only shows up as an HID device) is detected and the "enter IAP" step is skipped.
+
+## Download
+
+Prebuilt packages are on the [Releases](https://github.com/WeActStudio/CH32H417_LogicAnalyzer_Upgrade/releases)
+page. Windows 10 / 11 64-bit — unzip and run, no Qt or other runtime needed. The
+archive holds the GUI build, the console build, both CH375 driver DLLs, and these
+documents.
 
 ## APP slots and bootloader control
 
