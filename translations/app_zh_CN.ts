@@ -419,86 +419,102 @@ Close the program that currently uses the board (for example the logic analyzer 
     </message>
     <message>
         <location filename="../src/iapworker.cpp" line="522" />
+        <source>Padded the image with %1 bytes of 0xFF (flash page alignment)</source>
+        <translation>镜像已用 %1 字节 0xFF 补齐到 flash 页边界</translation>
+    </message>
+    <message>
+        <location filename="../src/iapworker.cpp" line="533" />
         <source>Starting upgrade ...</source>
         <translation>开始升级 ...</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="523" />
+        <location filename="../src/iapworker.cpp" line="534" />
         <source>========== Firmware upgrade started %1 ==========</source>
         <translation>========== 开始固件升级 %1 ==========</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="533" />
+        <location filename="../src/iapworker.cpp" line="544" />
         <source>Failed to load the firmware file</source>
         <translation>固件文件加载失败</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="538" />
+        <location filename="../src/iapworker.cpp" line="549" />
         <source>Entering IAP mode ...</source>
         <translation>进入 IAP 模式 ...</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="540" />
+        <location filename="../src/iapworker.cpp" line="551" />
         <source>Unable to enter IAP mode</source>
         <translation>无法进入 IAP 模式</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="546" />
+        <location filename="../src/iapworker.cpp" line="557" />
         <source>Device is now in IAP mode</source>
         <translation>设备已处于 IAP 模式</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="547" />
+        <location filename="../src/iapworker.cpp" line="558" />
         <source>The device rebooted into IAP mode</source>
         <translation>设备已重启进入 IAP 模式</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="552" />
+        <location filename="../src/iapworker.cpp" line="563" />
         <source>Looking for the IAP device ...</source>
         <translation>查找 IAP 设备 ...</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="554" />
+        <location filename="../src/iapworker.cpp" line="565" />
         <source>No device in IAP mode found</source>
         <translation>未找到 IAP 模式的设备</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="557" />
+        <location filename="../src/iapworker.cpp" line="568" />
         <source>Connected to the IAP device</source>
         <translation>已连接 IAP 设备</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="562" />
+        <location filename="../src/iapworker.cpp" line="573" />
         <source>Failed to erase FLASH</source>
         <translation>擦除 FLASH 失败</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="570" />
+        <location filename="../src/iapworker.cpp" line="581" />
         <source>Failed to program FLASH</source>
         <translation>编程 FLASH 失败</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="579" />
+        <location filename="../src/iapworker.cpp" line="590" />
         <source>Failed to verify FLASH</source>
         <translation>校验 FLASH 失败</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="586" />
+        <location filename="../src/iapworker.cpp" line="599" />
+        <location filename="../src/iapworker.cpp" line="601" />
+        <source>Slot programmed</source>
+        <translation>槽位编程完成</translation>
+    </message>
+    <message>
+        <location filename="../src/iapworker.cpp" line="600" />
+        <source>Slot programmed, the board stays in the bootloader</source>
+        <translation>槽位编程完成，设备停留在 bootloader</translation>
+    </message>
+    <message>
+        <location filename="../src/iapworker.cpp" line="607" />
         <source>Failed to finish the upgrade</source>
         <translation>结束升级失败</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="592" />
+        <location filename="../src/iapworker.cpp" line="613" />
         <source>Upgrade complete</source>
         <translation>升级完成</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="593" />
+        <location filename="../src/iapworker.cpp" line="614" />
         <source>========== Firmware upgrade succeeded ==========</source>
         <translation>========== 固件升级成功 ==========</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="594" />
+        <location filename="../src/iapworker.cpp" line="615" />
         <source>Firmware upgrade succeeded, the device will restart</source>
         <translation>固件升级成功，设备将重新启动</translation>
     </message>
@@ -707,9 +723,9 @@ Close the program that currently uses the board (for example the logic analyzer 
     </message>
     <message>
         <location filename="../src/mainwindow.cpp" line="520" />
-        <source>Programming start address for .bin files (hexadecimal, e.g. 08006000). On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.</source>
+        <source>Programming start address for .bin files (hexadecimal, e.g. 08006000). On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example.</source>
         <translation>.bin 文件的烧录起始地址（十六进制，如 08006000）。
-WeAct Studio Logic Analyzer V2 请选择三个 APP 槽之一：槽 0 = 逻辑分析仪，槽 1 = USB 转串口，槽 2 = 示例。</translation>
+WeAct Studio Logic Analyzer V2 请选择三个 APP 槽之一：槽 0 = 逻辑分析仪，槽 1 = USB 转串口 + DAP，槽 2 = 示例。</translation>
     </message>
     <message>
         <location filename="../src/mainwindow.cpp" line="523" />

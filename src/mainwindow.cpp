@@ -519,7 +519,7 @@ void MainWindow::retranslateUi()
      */
     baseAddressCombo_->setToolTip(tr("Programming start address for .bin files (hexadecimal, e.g. 08006000). "
                                       "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
-                                      "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example."));
+                                      "slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example."));
     fileEdit_->setPlaceholderText(tr("Select or drop a .hex / .bin firmware file"));
 
     logTitleLabel_->setText(tr("Upgrade Log"));

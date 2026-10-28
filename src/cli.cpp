@@ -26,6 +26,7 @@
 #include <QStringList>
 #include <QTextStream>
 #include <QThread>
+#include <QVector>
 
 #include "ch375dev.h"
 #include "ch375_wrapper.h"
@@ -68,6 +69,11 @@ struct CliOptions
     QString firmware;
     QString device;
     QString logFile;
+
+    /* Batch mode: one firmware per APP slot, empty = skip that slot */
+    QString slotFirmware[IAP_APP_SLOT_NUM];
+    int activateSlot = -1;       /* -1 = last one programmed, -2 = keep the current one */
+    bool dryRun = false;         /* Batch: check everything, write nothing */
 
     quint32 binBase = 0x08006000;
     quint16 iapVid = CH32H417_IAP_VID;
@@ -458,6 +464,16 @@ void printUsage(FILE *stream)
         "  -q, --quiet              Print only the progress, the errors and the result\n"
         "      --verbose            Also print the CH375 driver diagnostics\n"
         "\n"
+        "Batch upgrade (all slots in one pass, instead of -f):\n"
+        "      --slot0 <path>       Firmware for APP slot 0 (0x08006000)\n"
+        "      --slot1 <path>       Firmware for APP slot 1 (0x08052000)\n"
+        "      --slot2 <path>       Firmware for APP slot 2 (0x0809E000)\n"
+        "      --activate <n|none>  Slot to boot afterwards: 0..2, or \"none\" to\n"
+        "                           keep the current one (default: the last slot\n"
+        "                           that was programmed)\n"
+        "      --dry-run            Check the files, the slots and the device, then\n"
+        "                           stop without writing anything\n"
+        "\n"
         "Other commands:\n"
         "  -l, --list               List the attached devices and exit\n"
         "      --enter-iap          Reboot a board that runs the application into its\n"
@@ -477,6 +493,7 @@ void printUsage(FILE *stream)
         "  \"CH32H417 Logic Analyzer Upgrade\" -f firmware.hex\n"
         "  \"CH32H417 Logic Analyzer Upgrade\" -f app.bin -b 08006000 -d 0 -q\n"
         "  \"CH32H417 Logic Analyzer Upgrade\" --slot 1\n"
+        "  \"CH32H417 Logic Analyzer Upgrade\" --slot0 la.hex --slot2 demo.bin --activate 0\n"
         "\n"
         "Note: the graphical interface only opens when the program is started\n"
         "      from Windows Explorer (or any other non-console parent). From a\n"
@@ -576,6 +593,10 @@ bool parseArgs(const QStringList &args, CliOptions &opt, QString &error)
             opt.reboot = true;
             continue;
         }
+        if (arg == QLatin1String("--dry-run")) {
+            opt.dryRun = true;
+            continue;
+        }
         if (arg == QLatin1String("--enter-iap")) {
             opt.enterIap = true;
             continue;
@@ -593,6 +614,43 @@ bool parseArgs(const QStringList &args, CliOptions &opt, QString &error)
                 return false;
             }
             opt.slotSwitch = slot;
+            continue;
+        }
+        /* Batch upgrade: --slot0 / --slot1 / --slot2 each take one file */
+        {
+            int batchSlot = -1;
+            for (int s = 0; s < IAP_APP_SLOT_NUM; ++s) {
+                const QString head = QStringLiteral("--slot%1").arg(s);
+                if (arg == head || arg.startsWith(head + QLatin1Char('=')))
+                    batchSlot = s;
+            }
+            if (batchSlot >= 0) {
+                const QString name = QStringLiteral("slot%1").arg(batchSlot);
+                if (!optionValue(args, i, arg, name, value)) {
+                    error = QStringLiteral("Missing value for --%1").arg(name);
+                    return false;
+                }
+                opt.slotFirmware[batchSlot] = value;
+                continue;
+            }
+        }
+        if (arg == QLatin1String("--activate") || arg.startsWith(QLatin1String("--activate="))) {
+            if (!optionValue(args, i, arg, QStringLiteral("activate"), value)) {
+                error = QStringLiteral("Missing value for --activate");
+                return false;
+            }
+            if (value.trimmed().compare(QLatin1String("none"), Qt::CaseInsensitive) == 0) {
+                opt.activateSlot = -2;      /* keep whatever is active now */
+                continue;
+            }
+            bool ok = false;
+            const int slot = value.toInt(&ok);
+            if (!ok || slot < 0 || slot >= IAP_APP_SLOT_NUM) {
+                error = QStringLiteral("Invalid value for --activate: %1 (expected 0..%2 or none)")
+                            .arg(value).arg(IAP_APP_SLOT_NUM - 1);
+                return false;
+            }
+            opt.activateSlot = slot;
             continue;
         }
         if (arg == QLatin1String("--cli")) {
@@ -1037,8 +1095,193 @@ bool runIapWorker(const IapWorker::Config &config, bool quiet, QString &resultMe
     delete worker;
     delete thread;
 
-    ch375_set_log_func(nullptr);
     return success;
+}
+
+/* ==========================================================================
+ * Batch upgrade: one firmware per APP slot in a single pass
+ * ========================================================================== */
+
+/* Slot size, kept in sync with APP_SLOT_SIZE in the firmware eeprom.h */
+const quint32 kSlotSize = 0x0004C000u;      /* 304 KB */
+
+/* Flash page the bootloader erases at a time. The image is padded up to this
+   so every slot starts and ends on a page boundary - see Config::alignTo. */
+const quint32 kFlashPageSize = 0x2000u;     /* 8 KB */
+
+struct BatchJob
+{
+    int slot = 0;
+    QString path;
+    FirmwareImage image;
+};
+
+/* Missing device / busy device messages, shared with the single image path */
+void reportNoDevice(const CliOptions &opt, const QList<Ch375DeviceInfo> &devices)
+{
+    if (opt.device.isEmpty()) {
+        for (const Ch375DeviceInfo &info : devices) {
+            if (!info.busy)
+                continue;
+            printError(QStringLiteral(
+                "Error: the CH32H417 device at USB bus %1 address %2 is in "
+                "use by another program. Close that program and try again.")
+                           .arg(info.bus).arg(info.address));
+            return;
+        }
+        printError(QStringLiteral("Error: no CH32H417 device found"));
+    } else {
+        printError(QStringLiteral("Error: no device matches \"%1\"").arg(opt.device));
+    }
+    printDeviceList(devices);
+}
+
+int runBatchUpgrade(const CliOptions &opt, const QList<Ch375DeviceInfo> &devices)
+{
+    QVector<BatchJob> jobs;
+    for (int s = 0; s < IAP_APP_SLOT_NUM; ++s) {
+        if (opt.slotFirmware[s].isEmpty())
+            continue;
+        BatchJob job;
+        job.slot = s;
+        job.path = opt.slotFirmware[s];
+        jobs.append(job);
+    }
+
+    /* Every file is checked before the board is even touched: one bad image in
+       the middle of a batch would leave the slots before it programmed and the
+       board in the bootloader. */
+    for (BatchJob &job : jobs) {
+        const QFileInfo info(job.path);
+        if (!info.exists() || !info.isFile()) {
+            printError(QStringLiteral("Error: firmware file not found: %1").arg(job.path));
+            return kExitFirmware;
+        }
+
+        const quint32 base = iapctl_slot_base_address(job.slot);
+        QString fwError;
+        if (!firmware_load(job.path, base, job.image, fwError)) {
+            printError(QStringLiteral("Error: %1").arg(fwError));
+            return kExitFirmware;
+        }
+
+        /* The bootloader refuses writes outside the slot anyway, but by then
+           the slot is already erased - refuse up front. */
+        if (job.image.startAddress < base || job.image.endAddress >= base + kSlotSize) {
+            printError(QStringLiteral(
+                "Error: %1 (0x%2 - 0x%3) does not fit APP slot %4 (0x%5 - 0x%6)")
+                           .arg(info.fileName())
+                           .arg(job.image.startAddress, 8, 16, QLatin1Char('0'))
+                           .arg(job.image.endAddress, 8, 16, QLatin1Char('0'))
+                           .arg(job.slot)
+                           .arg(base, 8, 16, QLatin1Char('0'))
+                           .arg(base + kSlotSize - 1, 8, 16, QLatin1Char('0')));
+            return kExitFirmware;
+        }
+    }
+
+    Ch375DeviceInfo device;
+    if (selectDevice(devices, opt.device, opt.preferLibusb, device) != 0) {
+        reportNoDevice(opt, devices);
+        return kExitNoDevice;
+    }
+
+    if (!opt.quiet) {
+        printLine(QStringLiteral("Device   : %1").arg(device.description()));
+        printLine(QStringLiteral("Batch    : %1 APP slot(s) in one pass").arg(jobs.size()));
+        if (opt.binBase != 0x08006000u) {
+            printLine(QStringLiteral("Note     : --base is ignored in batch mode, "
+                                     "each slot uses its own base address"));
+        }
+    }
+
+    /* Dry run: report the plan (this is the only way to see what a mistyped
+       slot or file would do before three slots are gone). */
+    if (opt.dryRun) {
+        for (const BatchJob &job : jobs) {
+            const quint32 base = iapctl_slot_base_address(job.slot);
+            const quint32 size = static_cast<quint32>(job.image.data.size());
+            const quint32 padded = (size + kFlashPageSize - 1) / kFlashPageSize * kFlashPageSize;
+            printLine(QStringLiteral("Slot %1 (0x%2) <- %3  (%4 -> %5 bytes)")
+                          .arg(job.slot)
+                          .arg(base, 8, 16, QLatin1Char('0'))
+                          .arg(QFileInfo(job.path).absoluteFilePath())
+                          .arg(size).arg(padded));
+        }
+        const int activate = (opt.activateSlot == -1) ? jobs.last().slot : opt.activateSlot;
+        printLine(activate == -2
+                      ? QStringLiteral("Afterwards: reboot with the current active slot")
+                      : QStringLiteral("Afterwards: activate slot %1").arg(activate));
+        printLine(QStringLiteral("Dry run: nothing was written"));
+        return kExitOk;
+    }
+
+    for (int i = 0; i < jobs.size(); ++i) {
+        const BatchJob &job = jobs.at(i);
+        const quint32 base = iapctl_slot_base_address(job.slot);
+
+        if (!opt.quiet) {
+            printLine(QStringLiteral("[%1/%2] Slot %3 (0x%4) <- %5  (%6 bytes)")
+                          .arg(i + 1).arg(jobs.size())
+                          .arg(job.slot)
+                          .arg(base, 8, 16, QLatin1Char('0'))
+                          .arg(QFileInfo(job.path).absoluteFilePath())
+                          .arg(job.image.data.size()));
+        }
+
+        IapWorker::Config config = makeWorkerConfig(opt, device);
+        config.firmwarePath = QFileInfo(job.path).absoluteFilePath();
+        config.binBaseAddress = base;       /* the slot wins over --base */
+        config.skipEnd = true;              /* stay in the bootloader */
+        config.alignTo = kFlashPageSize;
+
+        QString resultMessage;
+        if (!runIapWorker(config, opt.quiet, resultMessage)) {
+            printError(QStringLiteral("FAILED: slot %1: %2").arg(job.slot).arg(resultMessage));
+            if (i > 0) {
+                printError(QStringLiteral("Slots already programmed stay as they are; "
+                                          "the device waits in the bootloader."));
+            }
+            return kExitUpgradeFailed;
+        }
+
+        if (!opt.quiet)
+            printLine(QStringLiteral("       OK"));
+
+        /* The board sits in the bootloader from here on, so the next slot
+           needs no mode switch, whatever channel it was reached on before. */
+        device.isIap = true;
+    }
+
+    /* Finish: activate a slot (this writes the config area) or only reboot.
+       END is never sent in a batch - it would jump out of the bootloader. */
+    const int activate = (opt.activateSlot == -1) ? jobs.last().slot : opt.activateSlot;
+    QString error;
+
+    if (activate == -2) {
+        if (!opt.quiet)
+            printLine(QStringLiteral("Rebooting with the active slot unchanged ..."));
+        if (!iapctl_reboot(opt.iapVid, opt.iapPid, error)) {
+            printError(QStringLiteral("Error: %1").arg(error));
+            return kExitUpgradeFailed;
+        }
+        printLine(QStringLiteral("OK: %1 slot(s) programmed, the device reboots into "
+                                 "its current slot").arg(jobs.size()));
+        return kExitOk;
+    }
+
+    if (!opt.quiet)
+        printLine(QStringLiteral("Activating slot %1 ...").arg(activate));
+    if (!iapctl_set_slot(opt.iapVid, opt.iapPid, activate, error)) {
+        printError(QStringLiteral("Error: %1").arg(error));
+        printError(QStringLiteral("The slots are programmed; use \"--slot %1\" to try again.")
+                       .arg(activate));
+        return kExitUpgradeFailed;
+    }
+
+    printLine(QStringLiteral("OK: %1 slot(s) programmed, slot %2 is now active")
+                  .arg(jobs.size()).arg(activate));
+    return kExitOk;
 }
 
 /* Runs the command line mode, cliRun() only adds the console clean-up */
@@ -1047,6 +1290,10 @@ int cliRunImpl(const QStringList &args);
 int cliRun(const QStringList &args)
 {
     const int code = cliRunImpl(args);
+
+    /* Cleared here rather than per worker run: a batch keeps the diagnostics
+       on across all of its slots */
+    ch375_set_log_func(nullptr);
 
     /* Draw the prompt below the output, with the cursor behind it */
     finishShellPrompt();
@@ -1205,6 +1452,28 @@ int cliRunImpl(const QStringList &args)
     }
 
     /* ---------------------------------------------------------------------
+     * Batch upgrade: one firmware per APP slot, all in one pass
+     * --------------------------------------------------------------------- */
+    bool batchMode = false;
+    for (int s = 0; s < IAP_APP_SLOT_NUM; ++s) {
+        if (!opt.slotFirmware[s].isEmpty())
+            batchMode = true;
+    }
+
+    if (batchMode) {
+        if (!opt.firmware.isEmpty()) {
+            printError(QStringLiteral("Error: --firmware cannot be combined with --slot0/1/2"));
+            return kExitUsage;
+        }
+        return runBatchUpgrade(opt, devices);
+    }
+
+    if (opt.activateSlot != -1) {
+        printError(QStringLiteral("Error: --activate needs at least one of --slot0/1/2"));
+        return kExitUsage;
+    }
+
+    /* ---------------------------------------------------------------------
      * Upgrade
      * --------------------------------------------------------------------- */
     if (opt.firmware.isEmpty()) {
@@ -1230,23 +1499,7 @@ int cliRunImpl(const QStringList &args)
 
     Ch375DeviceInfo device;
     if (selectDevice(devices, opt.device, opt.preferLibusb, device) != 0) {
-        if (opt.device.isEmpty()) {
-            /* A board that is held by another program is not a plain "no
-               device" situation: tell the user what blocks the upgrade. */
-            for (const Ch375DeviceInfo &info : devices) {
-                if (!info.busy)
-                    continue;
-                printError(QStringLiteral(
-                    "Error: the CH32H417 device at USB bus %1 address %2 is in "
-                    "use by another program. Close that program and try again.")
-                               .arg(info.bus).arg(info.address));
-                return kExitNoDevice;
-            }
-            printError(QStringLiteral("Error: no CH32H417 device found"));
-        } else {
-            printError(QStringLiteral("Error: no device matches \"%1\"").arg(opt.device));
-        }
-        printDeviceList(devices);
+        reportNoDevice(opt, devices);
         return kExitNoDevice;
     }
 
@@ -1265,6 +1518,15 @@ int cliRunImpl(const QStringList &args)
 
     IapWorker::Config config = makeWorkerConfig(opt, device);
     config.firmwarePath = fwInfo.absoluteFilePath();
+
+    if (opt.dryRun) {
+        printLine(QStringLiteral("Dry run: %1 bytes would be written to 0x%2 - 0x%3, "
+                                 "nothing was written")
+                      .arg(image.data.size())
+                      .arg(image.startAddress, 8, 16, QLatin1Char('0'))
+                      .arg(image.endAddress, 8, 16, QLatin1Char('0')));
+        return kExitOk;
+    }
 
     QString resultMessage;
     const bool success = runIapWorker(config, opt.quiet, resultMessage);

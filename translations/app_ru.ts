@@ -419,86 +419,102 @@ Close the program that currently uses the board (for example the logic analyzer 
     </message>
     <message>
         <location filename="../src/iapworker.cpp" line="522" />
+        <source>Padded the image with %1 bytes of 0xFF (flash page alignment)</source>
+        <translation>Образ дополнен %1 байтами 0xFF (выравнивание по странице flash)</translation>
+    </message>
+    <message>
+        <location filename="../src/iapworker.cpp" line="533" />
         <source>Starting upgrade ...</source>
         <translation>Начало обновления ...</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="523" />
+        <location filename="../src/iapworker.cpp" line="534" />
         <source>========== Firmware upgrade started %1 ==========</source>
         <translation>========== Начало обновления прошивки %1 ==========</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="533" />
+        <location filename="../src/iapworker.cpp" line="544" />
         <source>Failed to load the firmware file</source>
         <translation>Не удалось загрузить файл прошивки</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="538" />
+        <location filename="../src/iapworker.cpp" line="549" />
         <source>Entering IAP mode ...</source>
         <translation>Переход в режим IAP ...</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="540" />
+        <location filename="../src/iapworker.cpp" line="551" />
         <source>Unable to enter IAP mode</source>
         <translation>Не удалось перейти в режим IAP</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="546" />
+        <location filename="../src/iapworker.cpp" line="557" />
         <source>Device is now in IAP mode</source>
         <translation>Устройство теперь в режиме IAP</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="547" />
+        <location filename="../src/iapworker.cpp" line="558" />
         <source>The device rebooted into IAP mode</source>
         <translation>Устройство перезагрузилось в режим IAP</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="552" />
+        <location filename="../src/iapworker.cpp" line="563" />
         <source>Looking for the IAP device ...</source>
         <translation>Поиск устройства IAP ...</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="554" />
+        <location filename="../src/iapworker.cpp" line="565" />
         <source>No device in IAP mode found</source>
         <translation>Устройство в режиме IAP не найдено</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="557" />
+        <location filename="../src/iapworker.cpp" line="568" />
         <source>Connected to the IAP device</source>
         <translation>Подключено к устройству IAP</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="562" />
+        <location filename="../src/iapworker.cpp" line="573" />
         <source>Failed to erase FLASH</source>
         <translation>Не удалось стереть FLASH</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="570" />
+        <location filename="../src/iapworker.cpp" line="581" />
         <source>Failed to program FLASH</source>
         <translation>Не удалось запрограммировать FLASH</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="579" />
+        <location filename="../src/iapworker.cpp" line="590" />
         <source>Failed to verify FLASH</source>
         <translation>Не удалось проверить FLASH</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="586" />
+        <location filename="../src/iapworker.cpp" line="599" />
+        <location filename="../src/iapworker.cpp" line="601" />
+        <source>Slot programmed</source>
+        <translation>Слот запрограммирован</translation>
+    </message>
+    <message>
+        <location filename="../src/iapworker.cpp" line="600" />
+        <source>Slot programmed, the board stays in the bootloader</source>
+        <translation>Слот запрограммирован, плата остаётся в загрузчике</translation>
+    </message>
+    <message>
+        <location filename="../src/iapworker.cpp" line="607" />
         <source>Failed to finish the upgrade</source>
         <translation>Не удалось завершить обновление</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="592" />
+        <location filename="../src/iapworker.cpp" line="613" />
         <source>Upgrade complete</source>
         <translation>Обновление завершено</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="593" />
+        <location filename="../src/iapworker.cpp" line="614" />
         <source>========== Firmware upgrade succeeded ==========</source>
         <translation>========== Обновление прошивки успешно ==========</translation>
     </message>
     <message>
-        <location filename="../src/iapworker.cpp" line="594" />
+        <location filename="../src/iapworker.cpp" line="615" />
         <source>Firmware upgrade succeeded, the device will restart</source>
         <translation>Прошивка обновлена, устройство перезапустится</translation>
     </message>
@@ -699,9 +715,9 @@ Close the program that currently uses the board (for example the logic analyzer 
     </message>
     <message>
         <location filename="../src/mainwindow.cpp" line="520" />
-        <source>Programming start address for .bin files (hexadecimal, e.g. 08006000). On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.</source>
+        <source>Programming start address for .bin files (hexadecimal, e.g. 08006000). On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example.</source>
         <translation>Начальный адрес программирования для файлов .bin (шестнадцатеричный, например 08006000).
-На WeAct Studio Logic Analyzer V2 выберите один из трёх слотов APP: слот 0 = логический анализатор, слот 1 = USB-UART, слот 2 = пример.</translation>
+На WeAct Studio Logic Analyzer V2 выберите один из трёх слотов APP: слот 0 = логический анализатор, слот 1 = USB-UART + DAP, слот 2 = пример.</translation>
     </message>
     <message>
         <location filename="../src/mainwindow.cpp" line="523" />

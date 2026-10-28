@@ -153,6 +153,8 @@ ZH = {
     "  Address range: 0x%1 - 0x%2": "  地址范围：0x%1 - 0x%2",
     "  Checksum: 0x%1": "  校验和：0x%1",
     "Firmware data is empty": "固件数据为空",
+    "Padded the image with %1 bytes of 0xFF (flash page alignment)":
+        "镜像已用 %1 字节 0xFF 补齐到 flash 页边界",
     "Starting upgrade ...": "开始升级 ...",
     "========== Firmware upgrade started %1 ==========": "========== 开始固件升级 %1 ==========",
     "Failed to load the firmware file": "固件文件加载失败",
@@ -166,6 +168,9 @@ ZH = {
     "Failed to verify FLASH": "校验 FLASH 失败",
     "Failed to finish the upgrade": "结束升级失败",
     "Upgrade complete": "升级完成",
+    "Slot programmed": "槽位编程完成",
+    "Slot programmed, the board stays in the bootloader":
+        "槽位编程完成，设备停留在 bootloader",
     "========== Firmware upgrade succeeded ==========": "========== 固件升级成功 ==========",
     "Firmware upgrade succeeded, the device will restart": "固件升级成功，设备将重新启动",
 
@@ -272,10 +277,10 @@ ZH = {
     "The device rebooted into IAP mode": "设备已重启进入 IAP 模式",
     "Programming start address for .bin files (hexadecimal, e.g. 08006000). "
     "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
-    "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.":
+    "slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example.":
         ".bin 文件的烧录起始地址（十六进制，如 08006000）。\n"
         "WeAct Studio Logic Analyzer V2 请选择三个 APP 槽之一："
-        "槽 0 = 逻辑分析仪，槽 1 = USB 转串口，槽 2 = 示例。",
+        "槽 0 = 逻辑分析仪，槽 1 = USB 转串口 + DAP，槽 2 = 示例。",
     "Select Firmware File": "选择固件文件",
     "Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)":
         "固件文件 (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;二进制文件 (*.bin);;所有文件 (*.*)",
@@ -524,6 +529,8 @@ RU = {
     "  Address range: 0x%1 - 0x%2": "  Диапазон адресов: 0x%1 - 0x%2",
     "  Checksum: 0x%1": "  Контрольная сумма: 0x%1",
     "Firmware data is empty": "Данные прошивки пусты",
+    "Padded the image with %1 bytes of 0xFF (flash page alignment)":
+        "Образ дополнен %1 байтами 0xFF (выравнивание по странице flash)",
     "Starting upgrade ...": "Начало обновления ...",
     "========== Firmware upgrade started %1 ==========":
         "========== Начало обновления прошивки %1 ==========",
@@ -538,6 +545,9 @@ RU = {
     "Failed to verify FLASH": "Не удалось проверить FLASH",
     "Failed to finish the upgrade": "Не удалось завершить обновление",
     "Upgrade complete": "Обновление завершено",
+    "Slot programmed": "Слот запрограммирован",
+    "Slot programmed, the board stays in the bootloader":
+        "Слот запрограммирован, плата остаётся в загрузчике",
     "========== Firmware upgrade succeeded ==========":
         "========== Обновление прошивки успешно ==========",
     "Firmware upgrade succeeded, the device will restart":
@@ -654,11 +664,11 @@ RU = {
     "The device rebooted into IAP mode": "Устройство перезагрузилось в режим IAP",
     "Programming start address for .bin files (hexadecimal, e.g. 08006000). "
     "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
-    "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.":
+    "slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example.":
         "Начальный адрес программирования для файлов .bin (шестнадцатеричный, "
         "например 08006000).\n"
         "На WeAct Studio Logic Analyzer V2 выберите один из трёх слотов APP: "
-        "слот 0 = логический анализатор, слот 1 = USB-UART, слот 2 = пример.",
+        "слот 0 = логический анализатор, слот 1 = USB-UART + DAP, слот 2 = пример.",
     "Select Firmware File": "Выбор файла прошивки",
     "Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)":
         "Файлы прошивки (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;"
@@ -936,6 +946,8 @@ DE = {
     "  Address range: 0x%1 - 0x%2": "  Adressbereich: 0x%1 - 0x%2",
     "  Checksum: 0x%1": "  Prüfsumme: 0x%1",
     "Firmware data is empty": "Die Firmware-Daten sind leer",
+    "Padded the image with %1 bytes of 0xFF (flash page alignment)":
+        "Abbild mit %1 Bytes 0xFF aufgefüllt (Ausrichtung auf die Flash-Seite)",
     "Starting upgrade ...": "Aktualisierung wird gestartet ...",
     "========== Firmware upgrade started %1 ==========":
         "========== Firmware-Aktualisierung gestartet %1 ==========",
@@ -952,6 +964,9 @@ DE = {
     "Failed to finish the upgrade":
         "Die Aktualisierung konnte nicht abgeschlossen werden",
     "Upgrade complete": "Aktualisierung abgeschlossen",
+    "Slot programmed": "Slot programmiert",
+    "Slot programmed, the board stays in the bootloader":
+        "Slot programmiert, die Platine bleibt im Bootloader",
     "========== Firmware upgrade succeeded ==========":
         "========== Firmware-Aktualisierung erfolgreich ==========",
     "Firmware upgrade succeeded, the device will restart":
@@ -1072,10 +1087,10 @@ DE = {
         "Das Gerät wurde in den IAP-Modus neu gestartet",
     "Programming start address for .bin files (hexadecimal, e.g. 08006000). "
     "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
-    "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.":
+    "slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example.":
         "Startadresse zum Beschreiben von .bin-Dateien (hexadezimal, z. B. 08006000).\n"
         "Beim WeAct Studio Logic Analyzer V2 einen der drei APP-Slots wählen: "
-        "Slot 0 = Logikanalysator, Slot 1 = USB zu UART, Slot 2 = Beispiel.",
+        "Slot 0 = Logikanalysator, Slot 1 = USB zu UART + DAP, Slot 2 = Beispiel.",
     "Select Firmware File": "Firmware-Datei auswählen",
     "Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)":
         "Firmware-Dateien (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;"
@@ -1359,6 +1374,8 @@ ES = {
     "  Address range: 0x%1 - 0x%2": "  Rango de direcciones: 0x%1 - 0x%2",
     "  Checksum: 0x%1": "  Suma de comprobación: 0x%1",
     "Firmware data is empty": "Los datos del firmware están vacíos",
+    "Padded the image with %1 bytes of 0xFF (flash page alignment)":
+        "Imagen rellenada con %1 bytes 0xFF (alineación a la página de flash)",
     "Starting upgrade ...": "Iniciando la actualización ...",
     "========== Firmware upgrade started %1 ==========":
         "========== Actualización de firmware iniciada %1 ==========",
@@ -1374,6 +1391,9 @@ ES = {
     "Failed to verify FLASH": "No se pudo verificar la FLASH",
     "Failed to finish the upgrade": "No se pudo finalizar la actualización",
     "Upgrade complete": "Actualización completada",
+    "Slot programmed": "Slot programado",
+    "Slot programmed, the board stays in the bootloader":
+        "Slot programado, la placa permanece en el bootloader",
     "========== Firmware upgrade succeeded ==========":
         "========== Actualización de firmware correcta ==========",
     "Firmware upgrade succeeded, the device will restart":
@@ -1495,11 +1515,11 @@ ES = {
     "The device rebooted into IAP mode": "El dispositivo se reinició en modo IAP",
     "Programming start address for .bin files (hexadecimal, e.g. 08006000). "
     "On the WeAct Studio Logic Analyzer V2 pick one of the three APP slots: "
-    "slot 0 = logic analyzer, slot 1 = USB to UART, slot 2 = example.":
+    "slot 0 = logic analyzer, slot 1 = USB to UART + DAP, slot 2 = example.":
         "Dirección de inicio de programación para archivos .bin (hexadecimal, "
         "p. ej. 08006000).\n"
         "En el WeAct Studio Logic Analyzer V2 elija una de las tres ranuras APP: "
-        "ranura 0 = analizador lógico, ranura 1 = USB a UART, ranura 2 = ejemplo.",
+        "ranura 0 = analizador lógico, ranura 1 = USB a UART + DAP, ranura 2 = ejemplo.",
     "Select Firmware File": "Seleccionar archivo de firmware",
     "Firmware Files (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;Binary Files (*.bin);;All Files (*.*)":
         "Archivos de firmware (*.hex *.bin *.ihex);;Intel HEX (*.hex *.ihex);;"

@@ -512,6 +512,17 @@ bool IapWorker::loadFirmware(QByteArray &outData, quint32 &startAddr)
 
     outData = image.data;
     startAddr = image.startAddress;
+
+    /* See Config::alignTo: the tail buffer of the firmware is only flushed on
+       the first VERIFY after a reset, so align to the flash page instead. */
+    if (config_.alignTo > 1 && (outData.size() % static_cast<int>(config_.alignTo)) != 0) {
+        const int pad = static_cast<int>(config_.alignTo)
+                        - (outData.size() % static_cast<int>(config_.alignTo));
+        outData.append(QByteArray(pad, static_cast<char>(0xFF)));
+        log(tr("Padded the image with %1 bytes of 0xFF (flash page alignment)")
+                .arg(pad));
+    }
+
     return true;
 }
 
@@ -581,6 +592,16 @@ void IapWorker::run()
     }
 
     /* 6. Finish */
+    if (config_.skipEnd) {
+        /* Batch mode: the caller programs the next slot over the same
+           connection and finishes with SETSLOT / REBOOT itself */
+        closeHid();
+        updateProgress(100, tr("Slot programmed"));
+        log(tr("Slot programmed, the board stays in the bootloader"));
+        Q_EMIT finished(true, tr("Slot programmed"));
+        return;
+    }
+
     if (!endUpgrade()) {
         closeHid();
         Q_EMIT finished(false, tr("Failed to finish the upgrade"));

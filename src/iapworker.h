@@ -70,6 +70,20 @@ public:
         bool onlyEnterIap = false;
         bool alreadyInIap = false;              /* Device is already in IAP/HID mode */
         int hidWaitSeconds = 10;                /* Seconds to wait for the HID device to appear */
+
+        /*
+         * Batch mode (one pass over several APP slots): skip CMD_IAP_END so the
+         * board stays in the bootloader and the next slot can be programmed.
+         * The caller finishes with CMD_IAP_SETSLOT / CMD_IAP_REBOOT itself.
+         */
+        bool skipEnd = false;
+        /*
+         * Pad the image with 0xFF up to a multiple of this many bytes (the
+         * flash page). The firmware only flushes its tail buffer while
+         * Verify_Star_flag is clear, which happens once per reset, so an
+         * unaligned image loses its tail from the second slot onwards.
+         */
+        quint32 alignTo = 0;
     };
 
     explicit IapWorker(const Config &config, QObject *parent = nullptr);
