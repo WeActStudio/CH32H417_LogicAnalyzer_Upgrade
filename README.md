@@ -256,4 +256,10 @@ about 31 MB, the console build about 12 MB (QtCore only), and the script copies
 
 ## License
 
-GPL-3.0-or-later, Copyright (C) 2026 WeAct Studio.
+Released under the **GNU General Public License, version 3 or later
+(GPL-3.0-or-later)**, Copyright (C) 2026 WeAct Studio. The full text is in
+[LICENSE](LICENSE); the official copy lives at
+<https://www.gnu.org/licenses/gpl-3.0.html>.
+
+The program comes with no warranty, and modified versions must be
+distributed under the same license.

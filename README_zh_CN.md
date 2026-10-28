@@ -226,4 +226,8 @@ rem 预演一次批量烧录，不碰 flash
 
 ## 许可
 
-GPL-3.0-or-later，Copyright (C) 2026 WeAct Studio。
+本项目按 **GNU 通用公共许可证第 3 版或更高版本（GPL-3.0-or-later）** 发布，
+Copyright (C) 2026 WeAct Studio。许可证全文见仓库根目录的 [LICENSE](LICENSE)，
+官方文本见 <https://www.gnu.org/licenses/gpl-3.0.html>。
+
+本程序不提供任何担保；分发修改后的版本时，须同样以 GPL 公开源代码。
